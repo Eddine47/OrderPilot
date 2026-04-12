@@ -12,6 +12,9 @@ const recurringRoutes   = require('./routes/recurring');
 
 const app = express();
 
+// ── Trust proxy (Railway / reverse proxy) ──────────────────────────────────
+app.set('trust proxy', 1);
+
 // ── Sécurité : headers HTTP ────────────────────────────────────────────────
 app.use(helmet());
 
