@@ -36,9 +36,29 @@ export interface Delivery {
   total_quantity: number;     // computed: delivered - recovered
   is_recurring: boolean;
   status: DeliveryStatus;
+  order_reference?: string;
   notes?: string;
   created_at: string;
   updated_at: string;
+}
+
+export type PaymentMethod = 'card' | 'cash';
+
+export interface PrivateSale {
+  id: number;
+  user_id: number;
+  sale_date: string;          // ISO date "YYYY-MM-DD"
+  quantity: number;
+  payment_method: PaymentMethod;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpcomingDay {
+  date: string;
+  deliveries: Delivery[];
+  planned: (RecurringRule & { store_name: string })[];
 }
 
 export interface RecurringRule {

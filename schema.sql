@@ -48,10 +48,26 @@ CREATE TABLE deliveries (
   is_recurring       BOOLEAN NOT NULL DEFAULT FALSE,
   status             VARCHAR(20) NOT NULL DEFAULT 'pending'
                        CHECK (status IN ('pending', 'ok')),
+  order_reference    VARCHAR(100),
   notes              TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (store_id, delivery_number)
+);
+
+-- ============================================================
+-- PRIVATE SALES  (Ventes particuliers)
+-- ============================================================
+CREATE TABLE private_sales (
+  id              SERIAL PRIMARY KEY,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  sale_date       DATE NOT NULL,
+  quantity        INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+  payment_method  VARCHAR(20) NOT NULL DEFAULT 'cash'
+                    CHECK (payment_method IN ('card', 'cash')),
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ============================================================
@@ -85,6 +101,9 @@ CREATE INDEX idx_del_recurring       ON deliveries(user_id, is_recurring);
 CREATE INDEX idx_rec_user            ON recurring_deliveries(user_id);
 CREATE INDEX idx_rec_store           ON recurring_deliveries(store_id);
 
+CREATE INDEX idx_sales_user          ON private_sales(user_id);
+CREATE INDEX idx_sales_date          ON private_sales(user_id, sale_date);
+
 -- ============================================================
 -- UPDATED_AT AUTO-TRIGGER
 -- ============================================================
@@ -110,6 +129,10 @@ CREATE TRIGGER trg_deliveries_upd
 
 CREATE TRIGGER trg_recurring_upd
   BEFORE UPDATE ON recurring_deliveries
+  FOR EACH ROW EXECUTE FUNCTION _set_updated_at();
+
+CREATE TRIGGER trg_sales_upd
+  BEFORE UPDATE ON private_sales
   FOR EACH ROW EXECUTE FUNCTION _set_updated_at();
 
 -- ============================================================

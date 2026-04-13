@@ -9,6 +9,7 @@ interface Props {
     delivery_date: string;
     quantity_delivered: number;
     quantity_recovered: number;
+    order_reference: string;
     notes: string;
   }) => Promise<void>;
   onCancel: () => void;
@@ -18,10 +19,12 @@ interface Props {
 export default function DeliveryForm({ stores, initial, onSubmit, onCancel, loading }: Props) {
   const today = new Date().toISOString().slice(0, 10);
 
+  // .slice(0,10) garantit le format YYYY-MM-DD même si le backend renvoie un timestamp avec timezone
   const [storeId,    setStoreId]    = useState(initial?.store_id ?? (stores[0]?.id || 0));
-  const [date,       setDate]       = useState(initial?.delivery_date ?? today);
+  const [date,       setDate]       = useState((initial?.delivery_date ?? today).slice(0, 10));
   const [qty,        setQty]        = useState(initial?.quantity_delivered ?? 0);
   const [recovered,  setRecovered]  = useState(initial?.quantity_recovered ?? 0);
+  const [orderRef,   setOrderRef]   = useState(initial?.order_reference ?? '');
   const [notes,      setNotes]      = useState(initial?.notes ?? '');
   const [error,      setError]      = useState('');
 
@@ -35,7 +38,7 @@ export default function DeliveryForm({ stores, initial, onSubmit, onCancel, load
     if (!storeId) { setError('Sélectionnez une enseigne'); return; }
     if (qty < 0)  { setError('Quantité livrée invalide'); return; }
     try {
-      await onSubmit({ store_id: storeId, delivery_date: date, quantity_delivered: qty, quantity_recovered: recovered, notes });
+      await onSubmit({ store_id: storeId, delivery_date: date, quantity_delivered: qty, quantity_recovered: recovered, order_reference: orderRef, notes });
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setError(msg || 'Une erreur est survenue');
@@ -99,6 +102,17 @@ export default function DeliveryForm({ stores, initial, onSubmit, onCancel, load
         <span className="text-gray-600">Total : </span>
         <span className="font-bold text-blue-700 text-lg">{qty - recovered}</span>
         <span className="text-gray-600 ml-1">unités</span>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Réf. commande</label>
+        <input
+          type="text"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          value={orderRef}
+          onChange={(e) => setOrderRef(e.target.value)}
+          placeholder="N° de commande (optionnel)"
+        />
       </div>
 
       <div>

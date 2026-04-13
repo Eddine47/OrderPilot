@@ -1,12 +1,13 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
-import Layout      from './components/Layout';
-import PrivateRoute from './components/PrivateRoute';
-import Login        from './pages/Login';
-import Dashboard    from './pages/Dashboard';
-import StoreList    from './pages/StoreList';
-import StoreDetail  from './pages/StoreDetail';
-import DeliveryList from './pages/DeliveryList';
+import Layout          from './components/Layout';
+import PrivateRoute    from './components/PrivateRoute';
+import Login           from './pages/Login';
+import Dashboard       from './pages/Dashboard';
+import StoreList       from './pages/StoreList';
+import StoreDetail     from './pages/StoreDetail';
+import DeliveryList    from './pages/DeliveryList';
+import VenteParticulier from './pages/VenteParticulier';
 
 export default function App() {
   const { user } = useAuth();
@@ -57,6 +58,17 @@ export default function App() {
           <PrivateRoute>
             <Layout>
               <StoreDetail />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/ventes"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <VenteParticulier />
             </Layout>
           </PrivateRoute>
         }

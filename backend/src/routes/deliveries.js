@@ -2,7 +2,7 @@ const express = require('express');
 const { body } = require('express-validator');
 const {
   listDeliveries, getDelivery, createDelivery, updateDelivery,
-  patchStatus, deleteDelivery, todayDeliveries, monthlyTotal,
+  patchStatus, deleteDelivery, todayDeliveries, monthlyTotal, upcomingDeliveries,
 } = require('../controllers/deliveryController');
 const { verifyToken } = require('../middleware/auth');
 
@@ -12,6 +12,7 @@ router.use(verifyToken);
 
 router.get('/today',         todayDeliveries);
 router.get('/monthly-total', monthlyTotal);
+router.get('/upcoming',      upcomingDeliveries);
 
 router.get('/',    listDeliveries);
 router.post('/',
@@ -19,6 +20,7 @@ router.post('/',
   body('delivery_date').isDate().withMessage('Date invalide'),
   body('quantity_delivered').isInt({ min: 0 }).withMessage('Quantité livrée invalide'),
   body('quantity_recovered').optional().isInt({ min: 0 }),
+  body('order_reference').optional().isString().trim(),
   createDelivery
 );
 
@@ -28,6 +30,7 @@ router.put('/:id',
   body('quantity_delivered').optional().isInt({ min: 0 }),
   body('quantity_recovered').optional().isInt({ min: 0 }),
   body('status').optional().isIn(['pending', 'ok']),
+  body('order_reference').optional().isString().trim(),
   updateDelivery
 );
 router.patch('/:id/status',  patchStatus);

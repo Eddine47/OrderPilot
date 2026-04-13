@@ -75,7 +75,7 @@ async function createDelivery(req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { store_id, delivery_date, quantity_delivered, quantity_recovered = 0, notes } = req.body;
+    const { store_id, delivery_date, quantity_delivered, quantity_recovered = 0, order_reference, notes } = req.body;
 
     if (!(await assertStoreOwner(store_id, req.userId))) {
       return res.status(404).json({ error: 'Enseigne introuvable' });
@@ -87,11 +87,11 @@ async function createDelivery(req, res, next) {
     const { rows: [d] } = await client.query(
       `INSERT INTO deliveries
          (user_id, store_id, delivery_date, delivery_number,
-          quantity_delivered, quantity_recovered, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+          quantity_delivered, quantity_recovered, order_reference, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [req.userId, store_id, delivery_date, deliveryNumber,
-       quantity_delivered, quantity_recovered, notes || null]
+       quantity_delivered, quantity_recovered, order_reference || null, notes || null]
     );
     await client.query('COMMIT');
 
@@ -109,7 +109,7 @@ async function updateDelivery(req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { delivery_date, quantity_delivered, quantity_recovered, status, notes } = req.body;
+    const { delivery_date, quantity_delivered, quantity_recovered, status, order_reference, notes } = req.body;
 
     const { rows: [d] } = await db.query(
       `UPDATE deliveries
@@ -117,10 +117,11 @@ async function updateDelivery(req, res, next) {
            quantity_delivered = COALESCE($2, quantity_delivered),
            quantity_recovered = COALESCE($3, quantity_recovered),
            status             = COALESCE($4, status),
-           notes              = COALESCE($5, notes)
-       WHERE id = $6 AND user_id = $7
+           order_reference    = COALESCE($5, order_reference),
+           notes              = COALESCE($6, notes)
+       WHERE id = $7 AND user_id = $8
        RETURNING *`,
-      [delivery_date, quantity_delivered, quantity_recovered, status, notes,
+      [delivery_date, quantity_delivered, quantity_recovered, status, order_reference, notes,
        req.params.id, req.userId]
     );
     if (!d) return res.status(404).json({ error: 'Livraison introuvable' });
@@ -204,7 +205,61 @@ async function monthlyTotal(req, res, next) {
   }
 }
 
+// Livraisons des N prochains jours (pour la prévisualisation tableau de bord)
+async function upcomingDeliveries(req, res, next) {
+  try {
+    const days = Math.min(parseInt(req.query.days, 10) || 7, 30);
+    const dates = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    const from = dates[0];
+    const to   = dates[dates.length - 1];
+
+    // Livraisons existantes sur cette période
+    const { rows: existing } = await db.query(
+      `SELECT d.*,
+              (d.quantity_delivered - d.quantity_recovered) AS total_quantity,
+              s.name AS store_name
+       FROM deliveries d
+       JOIN stores s ON s.id = d.store_id
+       WHERE d.user_id = $1 AND d.delivery_date BETWEEN $2 AND $3
+       ORDER BY d.delivery_date, d.store_id`,
+      [req.userId, from, to]
+    );
+
+    // Règles récurrentes actives
+    const { rows: rules } = await db.query(
+      `SELECT r.*, s.name AS store_name
+       FROM recurring_deliveries r
+       JOIN stores s ON s.id = r.store_id
+       WHERE r.user_id = $1 AND r.is_active = TRUE`,
+      [req.userId]
+    );
+
+    // Construire le tableau par jour
+    const result = dates.map((dateStr) => {
+      const dayOfMonth = parseInt(dateStr.split('-')[2], 10);
+      const dayDeliveries = existing.filter((d) => d.delivery_date.toISOString
+        ? d.delivery_date.toISOString().slice(0, 10) === dateStr
+        : String(d.delivery_date).slice(0, 10) === dateStr
+      );
+      const plannedRules = rules.filter((r) =>
+        r.day_of_month === dayOfMonth &&
+        !dayDeliveries.some((d) => d.store_id === r.store_id)
+      );
+      return { date: dateStr, deliveries: dayDeliveries, planned: plannedRules };
+    });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listDeliveries, getDelivery, createDelivery, updateDelivery,
-  patchStatus, deleteDelivery, todayDeliveries, monthlyTotal,
+  patchStatus, deleteDelivery, todayDeliveries, monthlyTotal, upcomingDeliveries,
 };

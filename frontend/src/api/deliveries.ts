@@ -1,11 +1,12 @@
 import api from './client';
-import type { Delivery, DeliveryStatus, MonthlyTotal } from '../types';
+import type { Delivery, DeliveryStatus, MonthlyTotal, UpcomingDay } from '../types';
 
 export interface DeliveryPayload {
   store_id: number;
   delivery_date: string;
   quantity_delivered: number;
   quantity_recovered?: number;
+  order_reference?: string;
   notes?: string;
 }
 
@@ -38,6 +39,9 @@ export const deliveriesApi = {
 
   patchStatus: (id: number, status: DeliveryStatus) =>
     api.patch<Delivery>(`/deliveries/${id}/status`, { status }),
+
+  upcoming: (days = 7) =>
+    api.get<UpcomingDay[]>('/deliveries/upcoming', { params: { days } }),
 
   delete:  (id: number) =>
     api.delete(`/deliveries/${id}`),

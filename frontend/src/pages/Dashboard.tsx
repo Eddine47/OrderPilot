@@ -8,7 +8,7 @@ import { storesApi } from '../api/stores';
 import { recurringApi } from '../api/recurring';
 import { useAuth } from '../contexts/AuthContext';
 import DeliveryForm from '../components/DeliveryForm';
-import type { Delivery, RecurringRule } from '../types';
+import type { Delivery, RecurringRule, UpcomingDay } from '../types';
 import { MONTH_NAMES } from '../types';
 
 export default function Dashboard() {
@@ -16,13 +16,15 @@ export default function Dashboard() {
   const { user } = useAuth();
   const today   = new Date();
 
-  const [showForm,  setShowForm]  = useState(false);
-  const [editDel,   setEditDel]   = useState<Delivery | null>(null);
-  const [creating,  setCreating]  = useState(false);
-  // IDs de règles récurrentes ignorées pour aujourd'hui (état local)
-  const [dismissed, setDismissed] = useState<number[]>([]);
+  const [showForm,     setShowForm]     = useState(false);
+  const [editDel,      setEditDel]      = useState<Delivery | null>(null);
+  const [creating,     setCreating]     = useState(false);
+  const [dismissed,    setDismissed]    = useState<number[]>([]);
+  // Quel jour de la preview 7j est sélectionné pour l'impression
+  const [printDay,     setPrintDay]     = useState<string | null>(null);
 
-  const printRef = useRef<HTMLDivElement>(null);
+  const printTodayRef   = useRef<HTMLDivElement>(null);
+  const printUpcomingRef = useRef<HTMLDivElement>(null);
 
   const { data: todayDeliveries = [], isLoading } = useQuery({
     queryKey: ['deliveries', 'today'],
@@ -44,24 +46,36 @@ export default function Dashboard() {
     queryFn:  () => recurringApi.list().then((r) => r.data),
   });
 
+  const { data: upcomingDays = [] } = useQuery({
+    queryKey: ['deliveries', 'upcoming'],
+    queryFn:  () => deliveriesApi.upcoming(7).then((r) => r.data),
+  });
+
   // Règles récurrentes qui correspondent à aujourd'hui et sans livraison existante
+  // Number() assure la comparaison numérique même si day_of_month arrive en string
   const todayDay = today.getDate();
   const pendingRecurring: RecurringRule[] = recurringRules.filter(
     (r) =>
       r.is_active &&
-      r.day_of_month === todayDay &&
+      Number(r.day_of_month) === todayDay &&
       !dismissed.includes(r.id) &&
       !todayDeliveries.some((d) => d.store_id === r.store_id),
   );
 
-  const handlePrint = useReactToPrint({
-    content:      () => printRef.current,
+  // ── Impression bon du jour ──────────────────────────────────────────────────
+  const handlePrintToday = useReactToPrint({
+    content:      () => printTodayRef.current,
     documentTitle: `Bon-journalier-${today.toISOString().slice(0, 10)}`,
     copyStyles:   false,
-    pageStyle: `
-      @page { margin: 10mm; }
-      body  { margin: 0; }
-    `,
+    pageStyle: `@page { margin: 10mm; } body { margin: 0; }`,
+  });
+
+  // ── Impression bon d'un jour futur ─────────────────────────────────────────
+  const handlePrintUpcoming = useReactToPrint({
+    content:      () => printUpcomingRef.current,
+    documentTitle: `Bon-prevision-${printDay ?? ''}`,
+    copyStyles:   false,
+    pageStyle: `@page { margin: 10mm; } body { margin: 0; }`,
   });
 
   const statusMutation = useMutation({
@@ -75,6 +89,7 @@ export default function Dashboard() {
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['deliveries', 'today'] });
       qc.invalidateQueries({ queryKey: ['monthly-total'] });
+      qc.invalidateQueries({ queryKey: ['deliveries', 'upcoming'] });
     },
   });
 
@@ -84,6 +99,7 @@ export default function Dashboard() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deliveries', 'today'] });
       qc.invalidateQueries({ queryKey: ['monthly-total'] });
+      qc.invalidateQueries({ queryKey: ['deliveries', 'upcoming'] });
       setShowForm(false);
     },
   });
@@ -94,11 +110,11 @@ export default function Dashboard() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deliveries', 'today'] });
       qc.invalidateQueries({ queryKey: ['monthly-total'] });
+      qc.invalidateQueries({ queryKey: ['deliveries', 'upcoming'] });
       setEditDel(null);
     },
   });
 
-  // Confirmer une livraison récurrente → crée la livraison en base
   function confirmRecurring(rule: RecurringRule) {
     createMutation.mutate({
       store_id:           rule.store_id,
@@ -120,6 +136,9 @@ export default function Dashboard() {
 
   const canPrint = todayDeliveries.length > 0;
 
+  // Deliveries à imprimer pour le jour sélectionné dans la preview
+  const upcomingDayToPrint = upcomingDays.find((d) => d.date === printDay);
+
   return (
     <div className="space-y-6">
 
@@ -131,7 +150,7 @@ export default function Dashboard() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={canPrint ? handlePrint : undefined}
+            onClick={canPrint ? handlePrintToday : undefined}
             disabled={!canPrint}
             className="text-sm bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
@@ -224,133 +243,82 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Zone d'impression — inline styles obligatoires (Tailwind non chargé dans l'iframe react-to-print) */}
-      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
-        <div ref={printRef} style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 11, color: '#000', background: '#fff' }}>
-          {todayDeliveries.flatMap((d, idx) =>
-            [1, 2].map((copy) => {
-              const isLastPage = idx === todayDeliveries.length - 1 && copy === 2;
-              const GREEN = '#1a6b3c';
-              const cell = (extra?: React.CSSProperties): React.CSSProperties => ({
-                border: '1px solid #bbb', padding: '4px 8px', fontSize: 11, ...extra,
-              });
+      {/* ── Prévisualisation 7 prochains jours ─────────────────────────────── */}
+      {upcomingDays.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <h2 className="font-semibold text-gray-800 mb-3">Prévisions — 7 prochains jours</h2>
+          <div className="space-y-2">
+            {upcomingDays.map((day) => {
+              const isToday = day.date === today.toISOString().slice(0, 10);
+              const dateObj = new Date(day.date + 'T12:00:00');
+              const label   = format(dateObj, 'EEEE d MMMM', { locale: fr })
+                .replace(/^\w/, (c) => c.toUpperCase());
+              const totalItems = day.deliveries.length + day.planned.length;
+              if (totalItems === 0 && !isToday) return null;
               return (
-                <div key={`${d.id}-c${copy}`} style={{
-                  pageBreakAfter: isLastPage ? 'avoid' : 'always',
-                  breakAfter:     isLastPage ? 'avoid' : 'page',
-                  padding: '16mm 14mm',
-                  background: '#fff',
-                  color: '#000',
-                  boxSizing: 'border-box',
-                  width: '100%',
-                }}>
-
-                  {/* ── EN-TÊTE ── */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                    {/* Gauche */}
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
-                        <span style={{ fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', border: '1px solid #bbb', padding: '2px 6px' }}>DATE</span>
-                        <span style={{ fontSize: 13, fontWeight: 'bold' }}>{todayLabel}</span>
-                      </div>
-                      <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>EXPÉDITEUR</div>
-                      <div style={{ border: '1px solid #bbb', padding: '6px 8px', minHeight: 56 }}>
-                        <div style={{ fontWeight: 'bold', fontSize: 12 }}>{user?.company_name}</div>
-                        {user?.company_address && <div style={{ fontSize: 10, marginTop: 2, whiteSpace: 'pre-line' }}>{user.company_address}</div>}
-                        {user?.company_siret   && <div style={{ fontSize: 10, marginTop: 2 }}>Siret : {user.company_siret}</div>}
-                      </div>
-                    </div>
-
-                    {/* Droite */}
-                    <div style={{ flex: 1, paddingLeft: 16, textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0, marginBottom: 6 }}>
-                        <div style={{ background: GREEN, color: '#fff', fontWeight: 'bold', fontSize: 11, padding: '4px 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                          LIVRAISON N°
-                        </div>
-                        <div style={{ border: `2px solid ${GREEN}`, fontSize: 18, fontWeight: 'bold', padding: '2px 14px', minWidth: 44, textAlign: 'center', color: GREEN }}>
-                          {d.delivery_number}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>DESTINATAIRE</div>
-                      <div style={{ border: '1px solid #bbb', padding: '6px 8px', minHeight: 56, textAlign: 'left' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: 15 }}>{d.store_name}</div>
-                        <div style={{ fontSize: 9, marginTop: 6, color: '#777' }}>
-                          {copy === 1 ? 'Exemplaire enseigne' : 'Exemplaire livreur'}
-                        </div>
-                      </div>
-                    </div>
+                <div key={day.date} className={`rounded-lg border px-3 py-2 ${isToday ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-sm font-semibold ${isToday ? 'text-blue-800' : 'text-gray-700'}`}>
+                      {label}
+                      {isToday && <span className="ml-2 text-xs bg-blue-600 text-white rounded px-1.5 py-0.5">Aujourd'hui</span>}
+                    </span>
+                    {day.deliveries.length > 0 && (
+                      <button
+                        onClick={() => { setPrintDay(day.date); setTimeout(handlePrintUpcoming, 100); }}
+                        className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded hover:bg-gray-300 transition"
+                      >
+                        Imprimer bons
+                      </button>
+                    )}
                   </div>
-
-                  {/* ── RÉFÉRENCES ── */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 0, borderBottom: '1px solid #ccc', paddingBottom: 4, marginBottom: 4, fontSize: 10 }}>
-                    <div>Réf. commande : <span style={{ display: 'inline-block', width: 70, borderBottom: '1px solid #000' }}>&nbsp;</span></div>
-                    <div>Emballage : <span style={{ display: 'inline-block', width: 36, borderBottom: '1px solid #000' }}>&nbsp;</span></div>
-                    <div>Port : <span style={{ display: 'inline-block', width: 36, borderBottom: '1px solid #000' }}>&nbsp;</span></div>
-                  </div>
-                  <div style={{ fontSize: 10, borderBottom: '1px solid #ccc', paddingBottom: 4, marginBottom: 8 }}>
-                    Conditions de paiement : <span style={{ display: 'inline-block', width: 180, borderBottom: '1px solid #000' }}>&nbsp;</span>
-                  </div>
-
-                  {/* ── TABLEAU ── */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10 }}>
-                    <thead>
-                      <tr>
-                        <th style={cell({ width: 70, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>Date</th>
-                        <th style={cell({ textAlign: 'left', background: '#e8e8e8', fontWeight: 'bold' })}>Description</th>
-                        <th style={cell({ width: 80, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>Produit retourné</th>
-                        <th style={cell({ width: 50, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>Qté</th>
-                        <th style={cell({ width: 80, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>Signature</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td style={cell({ textAlign: 'center', padding: '8px 6px' })}>
-                          {format(new Date(d.delivery_date.slice(0, 10) + 'T12:00:00'), 'dd/MM/yy', { locale: fr })}
-                        </td>
-                        <td style={cell({ padding: '8px 8px', fontWeight: 'bold' })}>
-                          {d.quantity_delivered} paquets
-                        </td>
-                        <td style={cell({ padding: '8px 6px' })}>&nbsp;</td>
-                        <td style={cell({ padding: '8px 6px' })}>&nbsp;</td>
-                        <td style={cell({ padding: '8px 6px' })}>&nbsp;</td>
-                      </tr>
-                      {/* Lignes vides */}
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <tr key={i}>
-                          <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
-                          <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
-                          <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
-                          <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
-                          <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
-                        </tr>
+                  {totalItems === 0 ? (
+                    <p className="text-xs text-gray-400">Aucune livraison prévue</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {day.deliveries.map((d) => (
+                        <div key={d.id} className="flex items-center gap-2 text-xs">
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${d.status === 'ok' ? 'bg-green-500' : 'bg-blue-400'}`} />
+                          <span className="font-medium text-gray-800">{d.store_name}</span>
+                          <span className="text-gray-500">— {d.quantity_delivered} paquets</span>
+                          {d.quantity_recovered > 0 && (
+                            <span className="text-orange-600">retourné : {d.quantity_recovered}</span>
+                          )}
+                          <span className="text-blue-700 font-semibold ml-auto">= {d.total_quantity}</span>
+                        </div>
                       ))}
-                    </tbody>
-                    <tfoot>
-                      <tr>
-                        <td colSpan={3} style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f5f5f5', fontSize: 11 })}>
-                          Reçu les marchandises ci-dessus en bon état
-                        </td>
-                        <td style={cell({ background: '#f5f5f5' })}>&nbsp;</td>
-                        <td style={cell({ textAlign: 'center', fontSize: 9, background: '#f5f5f5' })}>
-                          Signature :
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-
-                  {/* ── PIED ── */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: 10, marginTop: 6 }}>
-                    <div>
-                      A <span style={{ display: 'inline-block', width: 100, borderBottom: '1px solid #000' }}>&nbsp;</span>
-                      &nbsp; le <span style={{ display: 'inline-block', width: 80, borderBottom: '1px solid #000' }}>&nbsp;</span>
+                      {day.planned.map((r) => (
+                        <div key={r.id} className="flex items-center gap-2 text-xs">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-purple-400" />
+                          <span className="font-medium text-gray-700">{r.store_name}</span>
+                          <span className="text-purple-600">— {r.quantity} paquets (prévu)</span>
+                          <span className="text-xs bg-purple-100 text-purple-600 rounded px-1 ml-1">R</span>
+                        </div>
+                      ))}
                     </div>
-                    <div style={{ fontSize: 9, color: '#777', textAlign: 'right', maxWidth: 220 }}>
-                      Nous nous réservons la propriété des marchandises jusqu'au paiement intégral de notre facture.
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
-            })
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Zone d'impression bon du jour ──────────────────────────────────── */}
+      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        <div ref={printTodayRef} style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 11, color: '#000', background: '#fff' }}>
+          <PrintSlips deliveries={todayDeliveries} dateLabel={todayLabel} user={user} />
+        </div>
+      </div>
+
+      {/* ── Zone d'impression bon jour futur ───────────────────────────────── */}
+      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        <div ref={printUpcomingRef} style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 11, color: '#000', background: '#fff' }}>
+          {upcomingDayToPrint && (
+            <PrintSlips
+              deliveries={upcomingDayToPrint.deliveries}
+              dateLabel={format(new Date(upcomingDayToPrint.date + 'T12:00:00'), 'EEEE d MMMM yyyy', { locale: fr }).replace(/^\w/, (c) => c.toUpperCase())}
+              user={user}
+            />
           )}
         </div>
       </div>
@@ -389,6 +357,155 @@ export default function Dashboard() {
   );
 }
 
+// ── Composant d'impression partagé ─────────────────────────────────────────────
+function PrintSlips({
+  deliveries,
+  dateLabel,
+  user,
+}: {
+  deliveries: Delivery[];
+  dateLabel: string;
+  user: { company_name?: string; company_address?: string; company_siret?: string } | null;
+}) {
+  const GREEN = '#1a6b3c';
+  const cell = (extra?: React.CSSProperties): React.CSSProperties => ({
+    border: '1px solid #bbb', padding: '4px 8px', fontSize: 11, ...extra,
+  });
+
+  return (
+    <>
+      {deliveries.flatMap((d, idx) =>
+        [1, 2].map((copy) => {
+          const isLastPage = idx === deliveries.length - 1 && copy === 2;
+          return (
+            <div key={`${d.id}-c${copy}`} style={{
+              pageBreakAfter: isLastPage ? 'avoid' : 'always',
+              breakAfter:     isLastPage ? 'avoid' : 'page',
+              padding: '16mm 14mm',
+              background: '#fff',
+              color: '#000',
+              boxSizing: 'border-box',
+              width: '100%',
+            }}>
+
+              {/* ── EN-TÊTE ── */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
+                    <span style={{ fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', border: '1px solid #bbb', padding: '2px 6px' }}>DATE</span>
+                    <span style={{ fontSize: 13, fontWeight: 'bold' }}>{dateLabel}</span>
+                  </div>
+                  <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>EXPÉDITEUR</div>
+                  <div style={{ border: '1px solid #bbb', padding: '6px 8px', minHeight: 56 }}>
+                    <div style={{ fontWeight: 'bold', fontSize: 12 }}>{user?.company_name}</div>
+                    {user?.company_address && <div style={{ fontSize: 10, marginTop: 2, whiteSpace: 'pre-line' }}>{user.company_address}</div>}
+                    {user?.company_siret   && <div style={{ fontSize: 10, marginTop: 2 }}>Siret : {user.company_siret}</div>}
+                  </div>
+                </div>
+                <div style={{ flex: 1, paddingLeft: 16, textAlign: 'right' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0, marginBottom: 6 }}>
+                    <div style={{ background: GREEN, color: '#fff', fontWeight: 'bold', fontSize: 11, padding: '4px 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      LIVRAISON N°
+                    </div>
+                    <div style={{ border: `2px solid ${GREEN}`, fontSize: 18, fontWeight: 'bold', padding: '2px 14px', minWidth: 44, textAlign: 'center', color: GREEN }}>
+                      {d.delivery_number}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>DESTINATAIRE</div>
+                  <div style={{ border: '1px solid #bbb', padding: '6px 8px', minHeight: 56, textAlign: 'left' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: 15 }}>{d.store_name}</div>
+                    <div style={{ fontSize: 9, marginTop: 6, color: '#777' }}>
+                      {copy === 1 ? 'Exemplaire enseigne' : 'Exemplaire livreur'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── RÉFÉRENCES ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 0, borderBottom: '1px solid #ccc', paddingBottom: 4, marginBottom: 4, fontSize: 10 }}>
+                <div>
+                  Réf. commande :&nbsp;
+                  {d.order_reference
+                    ? <strong>{d.order_reference}</strong>
+                    : <span style={{ display: 'inline-block', width: 70, borderBottom: '1px solid #000' }}>&nbsp;</span>
+                  }
+                </div>
+                <div>Emballage : <span style={{ display: 'inline-block', width: 36, borderBottom: '1px solid #000' }}>&nbsp;</span></div>
+                <div>Port : <span style={{ display: 'inline-block', width: 36, borderBottom: '1px solid #000' }}>&nbsp;</span></div>
+              </div>
+              <div style={{ fontSize: 10, borderBottom: '1px solid #ccc', paddingBottom: 4, marginBottom: 8 }}>
+                Conditions de paiement : <span style={{ display: 'inline-block', width: 180, borderBottom: '1px solid #000' }}>&nbsp;</span>
+              </div>
+
+              {/* ── TABLEAU ── */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10 }}>
+                <thead>
+                  <tr>
+                    <th style={cell({ width: 80, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>N° commande</th>
+                    <th style={cell({ width: 70, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>Date</th>
+                    <th style={cell({ textAlign: 'left', background: '#e8e8e8', fontWeight: 'bold' })}>Description</th>
+                    <th style={cell({ width: 70, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>Retourné</th>
+                    <th style={cell({ width: 50, textAlign: 'center', background: '#e8e8e8', fontWeight: 'bold' })}>Qté</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={cell({ textAlign: 'center', padding: '8px 6px', fontSize: 10 })}>
+                      {d.order_reference || '—'}
+                    </td>
+                    <td style={cell({ textAlign: 'center', padding: '8px 6px' })}>
+                      {format(new Date(d.delivery_date.slice(0, 10) + 'T12:00:00'), 'dd/MM/yy', { locale: fr })}
+                    </td>
+                    <td style={cell({ padding: '8px 8px', fontWeight: 'bold' })}>
+                      {d.quantity_delivered} paquets
+                    </td>
+                    <td style={cell({ textAlign: 'center', padding: '8px 6px' })}>
+                      {d.quantity_recovered > 0 ? d.quantity_recovered : '—'}
+                    </td>
+                    <td style={cell({ textAlign: 'center', padding: '8px 6px', fontWeight: 'bold' })}>
+                      {d.total_quantity}
+                    </td>
+                  </tr>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <tr key={i}>
+                      <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
+                      <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
+                      <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
+                      <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
+                      <td style={cell({ padding: '14px 6px' })}>&nbsp;</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={3} style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f5f5f5', fontSize: 11 })}>
+                      Reçu les marchandises ci-dessus en bon état
+                    </td>
+                    <td colSpan={2} style={cell({ textAlign: 'center', fontSize: 9, background: '#f5f5f5' })}>
+                      Signature :
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              {/* ── PIED ── */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: 10, marginTop: 6 }}>
+                <div>
+                  A <span style={{ display: 'inline-block', width: 100, borderBottom: '1px solid #000' }}>&nbsp;</span>
+                  &nbsp; le <span style={{ display: 'inline-block', width: 80, borderBottom: '1px solid #000' }}>&nbsp;</span>
+                </div>
+                <div style={{ fontSize: 9, color: '#777', textAlign: 'right', maxWidth: 220 }}>
+                  Nous nous réservons la propriété des marchandises jusqu'au paiement intégral de notre facture.
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </>
+  );
+}
+
 function DeliveryRow({
   delivery: d,
   onToggle,
@@ -424,6 +541,9 @@ function DeliveryRow({
           <span className="text-xs text-gray-400">N°{d.delivery_number}</span>
           {d.is_recurring && (
             <span className="text-xs bg-purple-600 text-white rounded px-1 font-medium">R</span>
+          )}
+          {d.order_reference && (
+            <span className="text-xs text-blue-600 bg-blue-50 rounded px-1">{d.order_reference}</span>
           )}
         </div>
         <div className="text-xs text-gray-500 mt-0.5">
@@ -477,3 +597,4 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
     </div>
   );
 }
+

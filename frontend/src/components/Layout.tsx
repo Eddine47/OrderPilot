@@ -2,9 +2,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
-  { to: '/',           label: 'Tableau de bord' },
-  { to: '/livraisons', label: 'Livraisons'      },
-  { to: '/enseignes',  label: 'Enseignes'       },
+  { to: '/',           label: 'Tableau de bord'    },
+  { to: '/livraisons', label: 'Livraisons'         },
+  { to: '/enseignes',  label: 'Enseignes'          },
+  { to: '/ventes',     label: 'Ventes particuliers' },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
