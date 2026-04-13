@@ -5,8 +5,8 @@ import DeliveryForm from '../components/DeliveryForm';
 import type { Store } from '../types';
 
 const mockStores: Store[] = [
-  { id: 1, name: 'Leclerc',     user_id: 1, is_active: true, created_at: '' },
-  { id: 2, name: 'Intermarché', user_id: 1, is_active: true, created_at: '' },
+  { id: 1, name: 'Leclerc',     user_id: 1, is_active: true, has_returns: true,  created_at: '' },
+  { id: 2, name: 'Intermarché', user_id: 1, is_active: true, has_returns: false, created_at: '' },
 ];
 
 describe('DeliveryForm', () => {
