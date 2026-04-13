@@ -30,6 +30,7 @@ CREATE TABLE stores (
   contact_name  VARCHAR(255),
   contact_phone VARCHAR(50),
   is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+  has_returns   BOOLEAN NOT NULL DEFAULT FALSE,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -6,6 +6,7 @@ export interface StorePayload {
   address?: string;
   contact_name?: string;
   contact_phone?: string;
+  has_returns?: boolean;
 }
 
 export const storesApi = {

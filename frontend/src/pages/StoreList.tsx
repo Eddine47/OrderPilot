@@ -154,13 +154,18 @@ export default function StoreList() {
                   )}
                 </div>
               </div>
-              <div className="mt-3 flex gap-3 text-sm">
+              <div className="mt-3 flex flex-wrap gap-2 text-sm">
                 <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs">
                   {store.delivery_count ?? 0} livraisons
                 </span>
                 <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded-full text-xs">
                   Total : {store.total_quantity ?? 0}
                 </span>
+                {store.has_returns && (
+                  <span className="bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full text-xs">
+                    Retours
+                  </span>
+                )}
               </div>
             </div>
           ))}

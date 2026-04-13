@@ -16,6 +16,7 @@ export interface Store {
   contact_name?: string;
   contact_phone?: string;
   is_active: boolean;
+  has_returns: boolean;
   created_at: string;
   // aggregated fields from list endpoint
   delivery_count?: number;

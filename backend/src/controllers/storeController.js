@@ -44,11 +44,11 @@ async function createStore(req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { name, address, contact_name, contact_phone } = req.body;
+    const { name, address, contact_name, contact_phone, has_returns } = req.body;
     const { rows: [store] } = await db.query(
-      `INSERT INTO stores (user_id, name, address, contact_name, contact_phone)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [req.userId, name, address || null, contact_name || null, contact_phone || null]
+      `INSERT INTO stores (user_id, name, address, contact_name, contact_phone, has_returns)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [req.userId, name, address || null, contact_name || null, contact_phone || null, has_returns ?? false]
     );
     res.status(201).json(store);
   } catch (err) {
@@ -61,16 +61,19 @@ async function updateStore(req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { name, address, contact_name, contact_phone } = req.body;
+    const { name, address, contact_name, contact_phone, has_returns } = req.body;
     const { rows: [store] } = await db.query(
       `UPDATE stores
        SET name          = COALESCE($1, name),
            address       = COALESCE($2, address),
            contact_name  = COALESCE($3, contact_name),
-           contact_phone = COALESCE($4, contact_phone)
-       WHERE id = $5 AND user_id = $6 AND is_active = TRUE
+           contact_phone = COALESCE($4, contact_phone),
+           has_returns   = COALESCE($5, has_returns)
+       WHERE id = $6 AND user_id = $7 AND is_active = TRUE
        RETURNING *`,
-      [name, address, contact_name, contact_phone, req.params.id, req.userId]
+      [name, address, contact_name, contact_phone,
+       has_returns !== undefined ? has_returns : null,
+       req.params.id, req.userId]
     );
     if (!store) return res.status(404).json({ error: 'Enseigne introuvable' });
     res.json(store);

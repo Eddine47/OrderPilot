@@ -6,7 +6,11 @@
 ALTER TABLE deliveries
   ADD COLUMN IF NOT EXISTS order_reference VARCHAR(100);
 
--- 2. Table ventes particuliers
+-- 2. Colonne has_returns sur stores (retours produits par enseigne)
+ALTER TABLE stores
+  ADD COLUMN IF NOT EXISTS has_returns BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 3. Table ventes particuliers
 CREATE TABLE IF NOT EXISTS private_sales (
   id              SERIAL PRIMARY KEY,
   user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

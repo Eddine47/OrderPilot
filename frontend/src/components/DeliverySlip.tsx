@@ -9,6 +9,7 @@ interface Props { slip: MonthlySlip; }
 // Tous les styles sont inline — Tailwind n'est pas disponible dans l'iframe react-to-print
 const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
   const { store, user, month, year, slip_number, deliveries, grand_total } = slip;
+  const showReturns = store.has_returns ?? false;
 
   const GREEN = '#1a6b3c';
 
@@ -106,7 +107,7 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
             <th style={cell({ textAlign: 'center', width: 72, fontWeight: 'bold', background: '#e8e8e8' })}>Réf. cmd</th>
             <th style={cell({ textAlign: 'center', width: 60, fontWeight: 'bold', background: '#e8e8e8' })}>Date</th>
             <th style={cell({ textAlign: 'left', fontWeight: 'bold', background: '#e8e8e8' })}>Description</th>
-            <th style={cell({ textAlign: 'center', width: 60, fontWeight: 'bold', background: '#e8e8e8' })}>Retourné</th>
+            {showReturns && <th style={cell({ textAlign: 'center', width: 60, fontWeight: 'bold', background: '#e8e8e8' })}>Retourné</th>}
             <th style={cell({ textAlign: 'center', width: 44, fontWeight: 'bold', background: '#e8e8e8' })}>Qté totale</th>
           </tr>
         </thead>
@@ -125,15 +126,17 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
                 </td>
                 <td style={cell({ padding: '4px 6px' })}>
                   {d.quantity_delivered} paquet{d.quantity_delivered > 1 ? 's' : ''}
-                  {retourne > 0 && (
+                  {showReturns && retourne > 0 && (
                     <span style={{ marginLeft: 6, color: '#c05600', fontSize: 9 }}>
                       (dont {retourne} retourné{retourne > 1 ? 's' : ''})
                     </span>
                   )}
                 </td>
-                <td style={cell({ textAlign: 'center', padding: '4px 4px', color: retourne > 0 ? '#c05600' : '#999' })}>
-                  {retourne > 0 ? retourne : '—'}
-                </td>
+                {showReturns && (
+                  <td style={cell({ textAlign: 'center', padding: '4px 4px', color: retourne > 0 ? '#c05600' : '#999' })}>
+                    {retourne > 0 ? retourne : '—'}
+                  </td>
+                )}
                 <td style={cell({ textAlign: 'center', padding: '4px 4px', fontWeight: 'bold', color: GREEN })}>
                   {total}
                 </td>
@@ -148,7 +151,7 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
               <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
               <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
               <td style={cell({ padding: '9px 6px' })}>&nbsp;</td>
-              <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
+              {showReturns && <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>}
               <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
             </tr>
           ))}
@@ -160,7 +163,7 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
             <td colSpan={4} style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f0f7f0', fontSize: 11, color: '#333' })}>
               TOTAL DU MOIS
             </td>
-            <td style={cell({ background: '#f0f7f0' })}>&nbsp;</td>
+            {showReturns && <td style={cell({ background: '#f0f7f0' })}>&nbsp;</td>}
             <td style={cell({ textAlign: 'center', fontWeight: 'bold', background: '#f0f7f0', fontSize: 13, color: GREEN })}>
               {grand_total}
             </td>

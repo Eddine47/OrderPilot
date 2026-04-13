@@ -3,24 +3,25 @@ import type { Store } from '../types';
 
 interface Props {
   initial?: Partial<Store>;
-  onSubmit: (data: { name: string; address: string; contact_name: string; contact_phone: string }) => Promise<void>;
+  onSubmit: (data: { name: string; address: string; contact_name: string; contact_phone: string; has_returns: boolean }) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
 }
 
 export default function StoreForm({ initial, onSubmit, onCancel, loading }: Props) {
-  const [name,    setName]    = useState(initial?.name    ?? '');
-  const [address, setAddress] = useState(initial?.address ?? '');
-  const [contact, setContact] = useState(initial?.contact_name  ?? '');
-  const [phone,   setPhone]   = useState(initial?.contact_phone ?? '');
-  const [error,   setError]   = useState('');
+  const [name,       setName]       = useState(initial?.name         ?? '');
+  const [address,    setAddress]    = useState(initial?.address       ?? '');
+  const [contact,    setContact]    = useState(initial?.contact_name  ?? '');
+  const [phone,      setPhone]      = useState(initial?.contact_phone ?? '');
+  const [hasReturns, setHasReturns] = useState(initial?.has_returns   ?? false);
+  const [error,      setError]      = useState('');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     if (!name.trim()) { setError('Le nom est requis'); return; }
     try {
-      await onSubmit({ name, address, contact_name: contact, contact_phone: phone });
+      await onSubmit({ name, address, contact_name: contact, contact_phone: phone, has_returns: hasReturns });
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setError(msg || 'Une erreur est survenue');
@@ -73,6 +74,23 @@ export default function StoreForm({ initial, onSubmit, onCancel, loading }: Prop
             placeholder="06 00 00 00 00"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <div
+            onClick={() => setHasReturns(!hasReturns)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${hasReturns ? 'bg-blue-600' : 'bg-gray-300'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${hasReturns ? 'translate-x-5' : ''}`} />
+          </div>
+          <span className="text-sm font-medium text-gray-700">Produits retournés</span>
+        </label>
+        <p className="text-xs text-gray-500 mt-1 ml-13">
+          {hasReturns
+            ? 'Cette enseigne pratique les retours — le champ "quantité récupérée" sera visible.'
+            : 'Aucun retour pour cette enseigne.'}
+        </p>
       </div>
 
       {error && <p className="text-red-600 text-sm">{error}</p>}

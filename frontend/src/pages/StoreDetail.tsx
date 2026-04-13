@@ -186,7 +186,7 @@ export default function StoreDetail() {
               <th className="px-4 py-3 text-left font-medium text-gray-600">N°</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600">Date</th>
               <th className="px-4 py-3 text-right font-medium text-gray-600">Livré</th>
-              <th className="px-4 py-3 text-right font-medium text-gray-600">Récupéré</th>
+              {store?.has_returns && <th className="px-4 py-3 text-right font-medium text-gray-600">Récupéré</th>}
               <th className="px-4 py-3 text-right font-medium text-gray-600">Total</th>
               <th className="px-4 py-3 text-center font-medium text-gray-600">Statut</th>
               <th className="px-4 py-3" />
@@ -194,9 +194,9 @@ export default function StoreDetail() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {delLoading ? (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">Chargement…</td></tr>
+              <tr><td colSpan={store?.has_returns ? 7 : 6} className="text-center py-8 text-gray-400">Chargement…</td></tr>
             ) : deliveries.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">Aucune livraison ce mois</td></tr>
+              <tr><td colSpan={store?.has_returns ? 7 : 6} className="text-center py-8 text-gray-400">Aucune livraison ce mois</td></tr>
             ) : deliveries.map((d) => (
               <tr key={d.id} className={
                 d.is_recurring && d.status !== 'ok' ? 'bg-purple-100' :
@@ -212,9 +212,11 @@ export default function StoreDetail() {
                   {format(new Date(d.delivery_date.slice(0, 10) + 'T12:00:00'), 'dd/MM/yy', { locale: fr })}
                 </td>
                 <td className="px-4 py-3 text-right">{d.quantity_delivered}</td>
-                <td className="px-4 py-3 text-right text-orange-600">
-                  {d.quantity_recovered > 0 ? d.quantity_recovered : '—'}
-                </td>
+                {store?.has_returns && (
+                  <td className="px-4 py-3 text-right text-orange-600">
+                    {d.quantity_recovered > 0 ? d.quantity_recovered : '—'}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-right font-semibold text-blue-700">{d.total_quantity}</td>
                 <td className="px-4 py-3 text-center">
                   <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -243,7 +245,7 @@ export default function StoreDetail() {
           {deliveries.length > 0 && (
             <tfoot className="bg-gray-50 border-t-2 border-gray-200">
               <tr>
-                <td colSpan={4} className="px-4 py-3 font-semibold text-right text-gray-700">TOTAL DU MOIS</td>
+                <td colSpan={store?.has_returns ? 4 : 3} className="px-4 py-3 font-semibold text-right text-gray-700">TOTAL DU MOIS</td>
                 <td className="px-4 py-3 text-right font-bold text-blue-700 text-base">{monthTotal}</td>
                 <td colSpan={2} />
               </tr>
