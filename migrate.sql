@@ -22,6 +22,15 @@ CREATE TABLE IF NOT EXISTS private_sales (
 CREATE INDEX IF NOT EXISTS idx_sales_user ON private_sales(user_id);
 CREATE INDEX IF NOT EXISTS idx_sales_date ON private_sales(user_id, sale_date);
 
+-- Fonction updated_at (idempotent)
+CREATE OR REPLACE FUNCTION _set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
 -- Trigger updated_at pour private_sales
 DO $$
 BEGIN

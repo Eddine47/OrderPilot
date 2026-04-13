@@ -6,6 +6,7 @@ const navItems = [
   { to: '/livraisons', label: 'Livraisons'         },
   { to: '/enseignes',  label: 'Enseignes'          },
   { to: '/ventes',     label: 'Ventes particuliers' },
+  { to: '/profil',     label: 'Mon profil'          },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -24,7 +25,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <header className="fixed inset-x-0 top-0 z-20 h-14 bg-blue-700 text-white shadow-md print:hidden flex items-center justify-between px-4 sm:px-6">
         <span className="font-bold text-lg tracking-wide">OrderPilot</span>
         <div className="flex items-center gap-4">
-          <span className="text-sm hidden sm:block text-blue-200">{user?.company_name}</span>
+          <Link to="/profil" className="text-sm hidden sm:block text-blue-200 hover:text-white transition">{user?.company_name}</Link>
           <button
             onClick={handleLogout}
             className="text-sm bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-lg transition"

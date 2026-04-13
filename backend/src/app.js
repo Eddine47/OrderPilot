@@ -13,6 +13,10 @@ const salesRoutes       = require('./routes/sales');
 
 const app = express();
 
+// ── Trust proxy (Railway / reverse-proxy) ──────────────────────────────────
+// Nécessaire pour que express-rate-limit lise correctement X-Forwarded-For
+app.set('trust proxy', 1);
+
 // ── Sécurité : headers HTTP ────────────────────────────────────────────────
 app.use(helmet());
 

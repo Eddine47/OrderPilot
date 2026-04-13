@@ -24,6 +24,8 @@ router.put('/me',
   verifyToken,
   body('name').optional().trim().notEmpty(),
   body('company_name').optional().trim().notEmpty(),
+  body('email').optional().isEmail().normalizeEmail(),
+  body('new_password').optional().isLength({ min: 8 }).withMessage('Nouveau mot de passe : 8 caractères minimum'),
   updateProfile
 );
 

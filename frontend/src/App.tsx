@@ -8,6 +8,7 @@ import StoreList       from './pages/StoreList';
 import StoreDetail     from './pages/StoreDetail';
 import DeliveryList    from './pages/DeliveryList';
 import VenteParticulier from './pages/VenteParticulier';
+import Profile           from './pages/Profile';
 
 export default function App() {
   const { user } = useAuth();
@@ -69,6 +70,17 @@ export default function App() {
           <PrivateRoute>
             <Layout>
               <VenteParticulier />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/profil"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <Profile />
             </Layout>
           </PrivateRoute>
         }
