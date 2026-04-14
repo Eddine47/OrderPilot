@@ -75,6 +75,20 @@ CREATE TABLE deliveries (
 );
 
 -- ============================================================
+-- DELIVERY ITEMS  (lignes produits des bons de livraison)
+-- ============================================================
+CREATE TABLE delivery_items (
+  id                 SERIAL PRIMARY KEY,
+  delivery_id        INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+  product_id         INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  quantity_delivered INTEGER NOT NULL DEFAULT 0 CHECK (quantity_delivered >= 0),
+  quantity_recovered INTEGER NOT NULL DEFAULT 0 CHECK (quantity_recovered >= 0),
+  unit_price_ht      NUMERIC(10,2),
+  vat_rate           NUMERIC(5,2),
+  position           INTEGER NOT NULL DEFAULT 1
+);
+
+-- ============================================================
 -- PRIVATE SALES  (Ventes particuliers)
 -- ============================================================
 CREATE TABLE private_sales (
@@ -87,6 +101,16 @@ CREATE TABLE private_sales (
   notes           TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE sale_items (
+  id            SERIAL PRIMARY KEY,
+  sale_id       INTEGER NOT NULL REFERENCES private_sales(id) ON DELETE CASCADE,
+  product_id    INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  quantity      INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+  unit_price_ht NUMERIC(10,2),
+  vat_rate      NUMERIC(5,2),
+  position      INTEGER NOT NULL DEFAULT 1
 );
 
 -- ============================================================
@@ -124,6 +148,9 @@ CREATE INDEX idx_sales_user          ON private_sales(user_id);
 CREATE INDEX idx_sales_date          ON private_sales(user_id, sale_date);
 
 CREATE INDEX idx_products_user       ON products(user_id);
+
+CREATE INDEX idx_delivery_items_delivery ON delivery_items(delivery_id);
+CREATE INDEX idx_sale_items_sale         ON sale_items(sale_id);
 
 -- ============================================================
 -- UPDATED_AT AUTO-TRIGGER

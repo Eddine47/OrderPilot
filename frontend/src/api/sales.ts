@@ -1,11 +1,18 @@
 import api from './client';
 import type { PrivateSale, PaymentMethod } from '../types';
 
+export interface SaleItemPayload {
+  product_id: number | null;
+  quantity: number;
+  unit_price_ht: number | null;
+  vat_rate: number | null;
+}
+
 export interface SalePayload {
   sale_date: string;
-  quantity: number;
   payment_method: PaymentMethod;
   notes?: string;
+  items: SaleItemPayload[];
 }
 
 export const salesApi = {

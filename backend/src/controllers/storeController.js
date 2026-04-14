@@ -124,11 +124,8 @@ async function getMonthlySlip(req, res, next) {
 
     const { rows: deliveries } = await db.query(
       `SELECT d.*,
-              (d.quantity_delivered - d.quantity_recovered) AS total_quantity,
-              p.name AS product_name,
-              p.unit AS product_unit
+              (d.quantity_delivered - d.quantity_recovered) AS total_quantity
        FROM deliveries d
-       LEFT JOIN products p ON p.id = d.product_id
        WHERE d.store_id = $1
          AND EXTRACT(YEAR  FROM d.delivery_date) = $2
          AND EXTRACT(MONTH FROM d.delivery_date) = $3
@@ -136,16 +133,39 @@ async function getMonthlySlip(req, res, next) {
       [req.params.id, y, m]
     );
 
+    // Charger les lignes produits (items) de toutes les livraisons
+    const delIds = deliveries.map((d) => d.id);
+    let itemsByDelivery = new Map();
+    if (delIds.length > 0) {
+      const { rows: items } = await db.query(
+        `SELECT i.*, p.name AS product_name, p.unit AS product_unit
+         FROM delivery_items i
+         LEFT JOIN products p ON p.id = i.product_id
+         WHERE i.delivery_id = ANY($1::int[])
+         ORDER BY i.delivery_id, i.position, i.id`,
+        [delIds]
+      );
+      for (const it of items) {
+        if (!itemsByDelivery.has(it.delivery_id)) itemsByDelivery.set(it.delivery_id, []);
+        itemsByDelivery.get(it.delivery_id).push(it);
+      }
+    }
+    for (const d of deliveries) {
+      d.items = itemsByDelivery.get(d.id) || [];
+    }
+
     const grandTotal = deliveries.reduce((s, d) => s + Number(d.total_quantity), 0);
-    const grandTotalHt = deliveries.reduce((s, d) => {
-      const price = Number(d.unit_price_ht) || 0;
-      return s + Number(d.total_quantity) * price;
-    }, 0);
-    const grandTotalTtc = deliveries.reduce((s, d) => {
-      const price = Number(d.unit_price_ht) || 0;
-      const vat = Number(d.vat_rate) || 0;
-      return s + Number(d.total_quantity) * price * (1 + vat / 100);
-    }, 0);
+    const grandTotalHt = deliveries.reduce((s, d) => s + d.items.reduce((acc, i) => {
+      const qty   = (Number(i.quantity_delivered) || 0) - (Number(i.quantity_recovered) || 0);
+      const price = Number(i.unit_price_ht) || 0;
+      return acc + qty * price;
+    }, 0), 0);
+    const grandTotalTtc = deliveries.reduce((s, d) => s + d.items.reduce((acc, i) => {
+      const qty   = (Number(i.quantity_delivered) || 0) - (Number(i.quantity_recovered) || 0);
+      const price = Number(i.unit_price_ht) || 0;
+      const vat   = Number(i.vat_rate) || 0;
+      return acc + qty * price * (1 + vat / 100);
+    }, 0), 0);
 
     // User company info
     const { rows: [user] } = await db.query(

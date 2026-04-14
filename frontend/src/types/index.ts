@@ -25,6 +25,19 @@ export interface Store {
 
 export type DeliveryStatus = 'pending' | 'ok';
 
+export interface DeliveryItem {
+  id: number;
+  delivery_id: number;
+  product_id: number | null;
+  product_name?: string | null;
+  product_unit?: string | null;
+  quantity_delivered: number;
+  quantity_recovered: number;
+  unit_price_ht: string | number | null;
+  vat_rate: string | number | null;
+  position: number;
+}
+
 export interface Delivery {
   id: number;
   user_id: number;
@@ -32,18 +45,14 @@ export interface Delivery {
   store_name: string;
   delivery_date: string;      // ISO date "YYYY-MM-DD"
   delivery_number: number;
-  quantity_delivered: number;
-  quantity_recovered: number;
+  quantity_delivered: number; // total agrégé des items
+  quantity_recovered: number; // total agrégé des items
   total_quantity: number;     // computed: delivered - recovered
   is_recurring: boolean;
   status: DeliveryStatus;
   order_reference?: string;
   notes?: string;
-  product_id?: number | null;
-  product_name?: string | null;
-  product_unit?: string | null;
-  unit_price_ht?: string | number | null;
-  vat_rate?: string | number | null;
+  items: DeliveryItem[];
   created_at: string;
   updated_at: string;
 }
@@ -62,13 +71,26 @@ export interface Product {
 
 export type PaymentMethod = 'card' | 'cash';
 
+export interface SaleItem {
+  id: number;
+  sale_id: number;
+  product_id: number | null;
+  product_name?: string | null;
+  product_unit?: string | null;
+  quantity: number;
+  unit_price_ht: string | number | null;
+  vat_rate: string | number | null;
+  position: number;
+}
+
 export interface PrivateSale {
   id: number;
   user_id: number;
   sale_date: string;          // ISO date "YYYY-MM-DD"
-  quantity: number;
+  quantity: number;           // total agrégé des items
   payment_method: PaymentMethod;
   notes?: string;
+  items: SaleItem[];
   created_at: string;
   updated_at: string;
 }

@@ -4,9 +4,21 @@ import { useReactToPrint } from 'react-to-print';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { salesApi } from '../api/sales';
+import { productsApi } from '../api/products';
 import { useAuth } from '../contexts/AuthContext';
-import type { PrivateSale, PaymentMethod } from '../types';
+import type { PrivateSale, PaymentMethod, Product, SaleItem } from '../types';
 import { MONTH_NAMES } from '../types';
+
+interface ItemRow {
+  product_id: number | null;
+  quantity: number;
+  unit_price_ht: string;
+  vat_rate: string;
+}
+
+function emptyRow(): ItemRow {
+  return { product_id: null, quantity: 0, unit_price_ht: '', vat_rate: '' };
+}
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -22,6 +34,23 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
+// ── Helpers calcul ──────────────────────────────────────────────────────────
+function itemTotals(it: Pick<SaleItem, 'quantity' | 'unit_price_ht' | 'vat_rate'>) {
+  const qty   = Number(it.quantity) || 0;
+  const price = Number(it.unit_price_ht) || 0;
+  const vat   = Number(it.vat_rate) || 0;
+  const totalHt  = qty * price;
+  const totalTtc = totalHt * (1 + vat / 100);
+  return { qty, price, vat, totalHt, totalTtc };
+}
+
+function saleTotals(sale: PrivateSale) {
+  const items = sale.items || [];
+  const totalHt  = items.reduce((s, i) => s + itemTotals(i).totalHt, 0);
+  const totalTtc = items.reduce((s, i) => s + itemTotals(i).totalTtc, 0);
+  return { totalHt, totalTtc };
+}
+
 export default function VenteParticulier() {
   const qc = useQueryClient();
   const { user } = useAuth();
@@ -31,14 +60,13 @@ export default function VenteParticulier() {
   const [year,  setYear]  = useState(now.getFullYear());
   const [paymentFilter, setPaymentFilter] = useState<'' | PaymentMethod>('');
 
-  // Formulaire nouvelle vente
-  const [qty,     setQty]     = useState(0);
+  // Formulaire
+  const [items,   setItems]   = useState<ItemRow[]>([emptyRow()]);
   const [payment, setPayment] = useState<PaymentMethod>('cash');
   const [notes,   setNotes]   = useState('');
   const [date,    setDate]    = useState(now.toISOString().slice(0, 10));
   const [error,   setError]   = useState('');
 
-  // Vente à imprimer (ticket individuel)
   const [saleToPrint, setSaleToPrint] = useState<PrivateSale | null>(null);
   const printRef        = useRef<HTMLDivElement>(null);
   const printMonthlyRef = useRef<HTMLDivElement>(null);
@@ -48,12 +76,17 @@ export default function VenteParticulier() {
     queryFn:  () => salesApi.list(month, year).then((r) => r.data),
   });
 
+  const { data: products = [] } = useQuery({
+    queryKey: ['products'],
+    queryFn:  () => productsApi.list().then((r) => r.data),
+  });
+
   const createMutation = useMutation({
     mutationFn: salesApi.create,
     onSuccess:  (res) => {
       qc.invalidateQueries({ queryKey: ['sales'] });
       setSaleToPrint(res.data);
-      setQty(0);
+      setItems([emptyRow()]);
       setNotes('');
     },
   });
@@ -77,12 +110,43 @@ export default function VenteParticulier() {
     pageStyle: `@page { margin: 15mm; } body { margin: 0; }`,
   });
 
+  function updateItem(idx: number, patch: Partial<ItemRow>) {
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  }
+  function addRow() { setItems((p) => [...p, emptyRow()]); }
+  function removeRow(idx: number) {
+    setItems((p) => (p.length === 1 ? p : p.filter((_, i) => i !== idx)));
+  }
+  function handleProductChange(idx: number, value: string) {
+    if (value === '') { updateItem(idx, { product_id: null }); return; }
+    const pid = Number(value);
+    const p: Product | undefined = products.find((x) => x.id === pid);
+    updateItem(idx, {
+      product_id: pid,
+      unit_price_ht: p ? String(p.unit_price_ht) : '',
+      vat_rate: p ? String(p.vat_rate) : '',
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (qty <= 0) { setError('La quantité doit être > 0'); return; }
+    if (items.length === 0 || items.every((it) => it.quantity <= 0)) {
+      setError('Ajoutez au moins une ligne avec quantité > 0');
+      return;
+    }
     try {
-      await createMutation.mutateAsync({ sale_date: date, quantity: qty, payment_method: payment, notes });
+      await createMutation.mutateAsync({
+        sale_date: date,
+        payment_method: payment,
+        notes,
+        items: items.map((it) => ({
+          product_id: it.product_id,
+          quantity: Number(it.quantity) || 0,
+          unit_price_ht: it.unit_price_ht === '' ? null : Number(it.unit_price_ht),
+          vat_rate:      it.vat_rate      === '' ? null : Number(it.vat_rate),
+        })),
+      });
     } catch {
       setError('Erreur lors de l\'enregistrement');
     }
@@ -98,42 +162,129 @@ export default function VenteParticulier() {
 
   const filteredSales = paymentFilter ? sales.filter((s) => s.payment_method === paymentFilter) : sales;
 
+  const formTotalQty = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  const formTotalHt  = items.reduce((s, it) => {
+    const q = Number(it.quantity) || 0;
+    const p = Number(it.unit_price_ht) || 0;
+    return s + q * p;
+  }, 0);
+  const formTotalTtc = items.reduce((s, it) => {
+    const q = Number(it.quantity) || 0;
+    const p = Number(it.unit_price_ht) || 0;
+    const v = Number(it.vat_rate) || 0;
+    return s + q * p * (1 + v / 100);
+  }, 0);
+
   return (
     <div className="space-y-6">
 
-      {/* En-tête */}
       <div>
         <h1 className="text-xl font-bold text-gray-800">Particulier</h1>
         <p className="text-gray-500 text-sm">Enregistrez et imprimez vos ventes directes</p>
       </div>
 
-      {/* Formulaire de saisie */}
+      {/* Formulaire */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-gray-700 mb-4">Nouvelle vente</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-              <input
-                type="date"
-                lang="fr"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-              />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+            <input
+              type="date"
+              lang="fr"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+            />
+          </div>
+
+          {/* Lignes produits */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">Produits</label>
+              <button
+                type="button"
+                onClick={addRow}
+                className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 transition"
+              >
+                + Ajouter un produit
+              </button>
             </div>
+
+            {items.map((it, idx) => (
+              <div key={idx} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500">Ligne {idx + 1}</span>
+                  {items.length > 1 && (
+                    <button type="button" onClick={() => removeRow(idx)} className="text-xs text-red-500 hover:text-red-700">
+                      Supprimer
+                    </button>
+                  )}
+                </div>
+                <select
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
+                  value={it.product_id ?? ''}
+                  onChange={(e) => handleProductChange(idx, e.target.value)}
+                >
+                  <option value="">— Aucun produit —</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-0.5">Quantité *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
+                    value={it.quantity}
+                    onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">PU HT (€)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
+                      value={it.unit_price_ht}
+                      onChange={(e) => updateItem(idx, { unit_price_ht: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">TVA (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      max={100}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
+                      value={it.vat_rate}
+                      onChange={(e) => updateItem(idx, { vat_rate: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Totaux */}
+          <div className="bg-blue-50 rounded-lg p-3 text-sm space-y-1">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Quantité *</label>
-              <input
-                type="number"
-                min={1}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                value={qty}
-                onChange={(e) => setQty(Number(e.target.value))}
-                required
-              />
+              <span className="text-gray-600">Total : </span>
+              <span className="font-bold text-blue-700 text-lg">{formTotalQty}</span>
+              <span className="text-gray-600 ml-1">unités</span>
             </div>
+            {formTotalHt > 0 && (
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Total HT : <span className="font-semibold text-gray-800">{formTotalHt.toFixed(2)} €</span></span>
+                <span>Total TTC : <span className="font-semibold text-green-700">{formTotalTtc.toFixed(2)} €</span></span>
+              </div>
+            )}
           </div>
 
           {/* Mode de paiement */}
@@ -230,7 +381,6 @@ export default function VenteParticulier() {
           </div>
         </div>
 
-        {/* Résumé mois */}
         {sales.length > 0 && (
           <div className="px-4 py-3 border-b border-gray-100 flex gap-4 flex-wrap text-sm">
             <span className="text-gray-600">Total : <strong className="text-blue-700">{monthTotal}</strong></span>
@@ -259,6 +409,9 @@ export default function VenteParticulier() {
                     {s.payment_method === 'card' ? '💳 Carte' : '💵 Espèces'}
                   </span>
                   <span className="font-bold text-blue-700">{s.quantity} unité{s.quantity > 1 ? 's' : ''}</span>
+                  {s.items && s.items.length > 1 && (
+                    <span className="text-xs text-gray-500">· {s.items.length} produits</span>
+                  )}
                 </div>
                 {s.notes && <p className="text-xs text-gray-400 mt-0.5">{s.notes}</p>}
               </div>
@@ -279,38 +432,25 @@ export default function VenteParticulier() {
         </div>
       </div>
 
-      {/* Zone d'impression (hors écran) */}
+      {/* Zones d'impression */}
       <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
         <div ref={printRef}>
-          {saleToPrint && (
-            <SaleReceipt sale={saleToPrint} user={user} />
-          )}
+          {saleToPrint && <SaleReceipt sale={saleToPrint} user={user} />}
         </div>
       </div>
 
-      {/* Zone d'impression récap mensuel (hors écran) */}
       <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
         <div ref={printMonthlyRef}>
-          <MonthlyReport
-            cardSales={cardSales}
-            cashSales={cashSales}
-            month={month}
-            year={year}
-            user={user}
-          />
+          <MonthlyReport cardSales={cardSales} cashSales={cashSales} month={month} year={year} user={user} />
         </div>
       </div>
     </div>
   );
 }
 
-// ── Récapitulatif mensuel (CB + espèces sur 2 pages) ──────────────────────────
+// ── Récap mensuel ────────────────────────────────────────────────────────────
 function MonthlyReport({
-  cardSales,
-  cashSales,
-  month,
-  year,
-  user,
+  cardSales, cashSales, month, year, user,
 }: {
   cardSales: PrivateSale[];
   cashSales: PrivateSale[];
@@ -328,7 +468,18 @@ function MonthlyReport({
     background: string,
     isLast: boolean,
   ) => {
-    const total = sales.reduce((s, v) => s + v.quantity, 0);
+    // On projette tous les items (1 ligne tableau = 1 item)
+    type Row = { sale: PrivateSale; item: SaleItem; idx: number };
+    const rows: Row[] = [];
+    sales.forEach((s) => {
+      (s.items || []).forEach((it) => rows.push({ sale: s, item: it, idx: rows.length + 1 }));
+    });
+
+    const hasPricing = rows.some((r) => Number(r.item.unit_price_ht) > 0);
+    const totalQty = rows.reduce((s, r) => s + (Number(r.item.quantity) || 0), 0);
+    const totalHt  = rows.reduce((s, r) => s + itemTotals(r.item).totalHt, 0);
+    const totalTtc = rows.reduce((s, r) => s + itemTotals(r.item).totalTtc, 0);
+
     return (
       <div style={{
         pageBreakAfter: isLast ? 'avoid' : 'always',
@@ -341,14 +492,12 @@ function MonthlyReport({
         fontFamily: 'Arial, Helvetica, sans-serif',
         fontSize: 11,
       }}>
-        {/* En-tête */}
         <div style={{ textAlign: 'center', marginBottom: 14 }}>
           <div style={{ background: color, color: '#fff', fontWeight: 'bold', fontSize: 13, padding: '6px 18px', display: 'inline-block', letterSpacing: 0.8 }}>
             {title.toUpperCase()} — {periodLabel.toUpperCase()}
           </div>
         </div>
 
-        {/* Vendeur */}
         <div style={{ border: '1px solid #ccc', padding: '8px 12px', marginBottom: 12, borderRadius: 4 }}>
           <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>VENDEUR</div>
           <div style={{ fontWeight: 'bold', fontSize: 13 }}>{user?.company_name ?? ''}</div>
@@ -356,38 +505,56 @@ function MonthlyReport({
           {user?.company_siret   && <div style={{ fontSize: 10, marginTop: 2 }}>Siret : {user.company_siret}</div>}
         </div>
 
-        {/* Tableau */}
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
           <thead>
             <tr style={{ background }}>
-              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 48 }}>N°</th>
-              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 90 }}>Date</th>
-              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'left', fontSize: 10 }}>Description</th>
-              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 70 }}>Quantité</th>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 32 }}>N°</th>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 72 }}>Date</th>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'left',   fontSize: 10 }}>Produit</th>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 44 }}>Qté</th>
+              {hasPricing && (
+                <>
+                  <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 54 }}>PU HT</th>
+                  <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 56 }}>Total HT</th>
+                  <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 38 }}>TVA</th>
+                  <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 58 }}>Total TTC</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
-            {sales.length === 0 ? (
+            {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} style={{ border: '1px solid #bbb', padding: '14px 8px', textAlign: 'center', fontStyle: 'italic', color: '#888' }}>
+                <td colSpan={hasPricing ? 8 : 4} style={{ border: '1px solid #bbb', padding: '14px 8px', textAlign: 'center', fontStyle: 'italic', color: '#888' }}>
                   Aucune vente
                 </td>
               </tr>
-            ) : sales.map((s, idx) => (
-              <tr key={s.id}>
-                <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontWeight: 'bold', color }}>{idx + 1}</td>
-                <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center' }}>
-                  {format(new Date(String(s.sale_date).slice(0, 10) + 'T12:00:00'), 'dd/MM/yyyy', { locale: fr })}
-                </td>
-                <td style={{ border: '1px solid #bbb', padding: '5px 8px' }}>
-                  Vente directe — {title.toLowerCase()}
-                  {s.notes && <div style={{ fontSize: 9, color: '#666', marginTop: 1 }}>{s.notes}</div>}
-                </td>
-                <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontWeight: 'bold', color: GREEN }}>
-                  {s.quantity}
-                </td>
-              </tr>
-            ))}
+            ) : rows.map(({ sale, item, idx }) => {
+              const { price, vat, totalHt: ht, totalTtc: ttc } = itemTotals(item);
+              return (
+                <tr key={`${sale.id}-${item.id}`}>
+                  <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontWeight: 'bold', color }}>{idx}</td>
+                  <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center' }}>
+                    {format(new Date(String(sale.sale_date).slice(0, 10) + 'T12:00:00'), 'dd/MM/yyyy', { locale: fr })}
+                  </td>
+                  <td style={{ border: '1px solid #bbb', padding: '5px 8px' }}>
+                    {item.product_name || 'Vente directe'}
+                    {sale.notes && <div style={{ fontSize: 9, color: '#666', marginTop: 1 }}>{sale.notes}</div>}
+                  </td>
+                  <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontWeight: 'bold', color: GREEN }}>
+                    {item.quantity}
+                  </td>
+                  {hasPricing && (
+                    <>
+                      <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'right' }}>{price > 0 ? `${price.toFixed(2)} €` : '—'}</td>
+                      <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'right' }}>{price > 0 ? `${ht.toFixed(2)} €` : '—'}</td>
+                      <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center' }}>{price > 0 ? `${vat.toFixed(0)}%` : '—'}</td>
+                      <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'right', fontWeight: 'bold' }}>{price > 0 ? `${ttc.toFixed(2)} €` : '—'}</td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr style={{ background: '#f5f5f5' }}>
@@ -395,13 +562,20 @@ function MonthlyReport({
                 TOTAL {title.toUpperCase()}
               </td>
               <td style={{ border: '1px solid #bbb', padding: '7px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 14, color }}>
-                {total}
+                {totalQty}
               </td>
+              {hasPricing && (
+                <>
+                  <td style={{ border: '1px solid #bbb', background: '#f5f5f5' }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #bbb', padding: '7px 8px', textAlign: 'right', fontWeight: 'bold' }}>{totalHt.toFixed(2)} €</td>
+                  <td style={{ border: '1px solid #bbb', background: '#f5f5f5' }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #bbb', padding: '7px 8px', textAlign: 'right', fontWeight: 'bold', color }}>{totalTtc.toFixed(2)} €</td>
+                </>
+              )}
             </tr>
           </tfoot>
         </table>
 
-        {/* Pied */}
         <div style={{ marginTop: 14, fontSize: 10, color: '#555' }}>
           {sales.length} opération{sales.length > 1 ? 's' : ''} · Période {periodLabel}
         </div>
@@ -417,7 +591,7 @@ function MonthlyReport({
   );
 }
 
-// ── Ticket de vente ────────────────────────────────────────────────────────────
+// ── Ticket individuel ────────────────────────────────────────────────────────
 function SaleReceipt({
   sale,
   user,
@@ -429,6 +603,10 @@ function SaleReceipt({
   const GREEN  = '#1a6b3c';
   const dateStr = String(sale.sale_date).slice(0, 10);
   const dateLabel = format(new Date(dateStr + 'T12:00:00'), 'dd MMMM yyyy', { locale: fr });
+
+  const items = sale.items || [];
+  const hasPricing = items.some((i) => Number(i.unit_price_ht) > 0);
+  const totals = saleTotals(sale);
 
   const block: React.CSSProperties = {
     border: '1px solid #ccc',
@@ -444,14 +622,12 @@ function SaleReceipt({
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 11, color: '#000', background: '#fff', padding: '20mm 16mm', boxSizing: 'border-box' }}>
 
-      {/* Titre */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ background: GREEN, color: '#fff', fontWeight: 'bold', fontSize: 14, padding: '8px 20px', display: 'inline-block', letterSpacing: 1 }}>
           BON DE VENTE
         </div>
       </div>
 
-      {/* Vendeur */}
       <div style={block}>
         <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 4 }}>VENDEUR</div>
         <div style={{ fontWeight: 'bold', fontSize: 13 }}>{user?.company_name ?? ''}</div>
@@ -459,7 +635,6 @@ function SaleReceipt({
         {user?.company_siret   && <div style={{ fontSize: 10, marginTop: 2 }}>Siret : {user.company_siret}</div>}
       </div>
 
-      {/* Acheteur + date */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
         <div style={block}>
           <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 4 }}>ACHETEUR</div>
@@ -471,7 +646,6 @@ function SaleReceipt({
         </div>
       </div>
 
-      {/* Mode de paiement */}
       <div style={{ ...block, borderColor: isCard ? '#2563eb' : '#059669', background: isCard ? '#eff6ff' : '#f0fdf4' }}>
         <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 4 }}>MODE DE PAIEMENT</div>
         <div style={{ fontWeight: 'bold', fontSize: 13, color: isCard ? '#1d4ed8' : '#065f46' }}>
@@ -479,38 +653,64 @@ function SaleReceipt({
         </div>
       </div>
 
-      {/* Détail de la vente */}
+      {/* Tableau des items */}
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
         <thead>
           <tr style={{ background: '#e8e8e8' }}>
-            <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'left', fontSize: 10 }}>Description</th>
-            <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontSize: 10, width: 60 }}>Quantité</th>
+            <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontSize: 10, width: 32 }}>N°</th>
+            <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'left', fontSize: 10 }}>Produit</th>
+            <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontSize: 10, width: 50 }}>Qté</th>
+            {hasPricing && (
+              <>
+                <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontSize: 10, width: 60 }}>PU HT</th>
+                <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontSize: 10, width: 60 }}>Total HT</th>
+                <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontSize: 10, width: 40 }}>TVA</th>
+                <th style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontSize: 10, width: 62 }}>Total TTC</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td style={{ border: '1px solid #bbb', padding: '8px 8px', fontWeight: 'bold' }}>
-              Vente directe — {isCard ? 'Acheteur divers paiement bancaire' : 'Acheteur divers espèces'}
-              {sale.notes && <div style={{ fontSize: 9, color: '#666', fontWeight: 'normal', marginTop: 2 }}>{sale.notes}</div>}
-            </td>
-            <td style={{ border: '1px solid #bbb', padding: '8px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 14, color: GREEN }}>
-              {sale.quantity}
-            </td>
-          </tr>
+          {items.map((it, idx) => {
+            const { price, vat, totalHt, totalTtc } = itemTotals(it);
+            return (
+              <tr key={it.id ?? idx}>
+                <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontWeight: 'bold', color: GREEN }}>{idx + 1}</td>
+                <td style={{ border: '1px solid #bbb', padding: '6px 8px' }}>
+                  {it.product_name || (isCard ? 'Vente directe — paiement bancaire' : 'Vente directe — espèces')}
+                  {idx === 0 && sale.notes && <div style={{ fontSize: 9, color: '#666', fontWeight: 'normal', marginTop: 2 }}>{sale.notes}</div>}
+                </td>
+                <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontWeight: 'bold', color: GREEN }}>{it.quantity}</td>
+                {hasPricing && (
+                  <>
+                    <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'right' }}>{price > 0 ? `${price.toFixed(2)} €` : '—'}</td>
+                    <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'right' }}>{price > 0 ? `${totalHt.toFixed(2)} €` : '—'}</td>
+                    <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center' }}>{price > 0 ? `${vat.toFixed(0)}%` : '—'}</td>
+                    <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>{price > 0 ? `${totalTtc.toFixed(2)} €` : '—'}</td>
+                  </>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr style={{ background: '#f5f5f5' }}>
-            <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 11 }}>
-              TOTAL
-            </td>
-            <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 15, color: GREEN }}>
+            <td colSpan={2} style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 11 }}>TOTAL</td>
+            <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 14, color: GREEN }}>
               {sale.quantity}
             </td>
+            {hasPricing && (
+              <>
+                <td style={{ border: '1px solid #bbb', background: '#f5f5f5' }}>&nbsp;</td>
+                <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>{totals.totalHt.toFixed(2)} €</td>
+                <td style={{ border: '1px solid #bbb', background: '#f5f5f5' }}>&nbsp;</td>
+                <td style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: GREEN }}>{totals.totalTtc.toFixed(2)} €</td>
+              </>
+            )}
           </tr>
         </tfoot>
       </table>
 
-      {/* Pied */}
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginTop: 16 }}>
         <div>
           Fait à <span style={{ display: 'inline-block', width: 100, borderBottom: '1px solid #000' }}>&nbsp;</span>

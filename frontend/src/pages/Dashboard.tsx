@@ -119,9 +119,15 @@ export default function Dashboard() {
 
   function confirmRecurring(rule: RecurringRule) {
     createMutation.mutate({
-      store_id:           rule.store_id,
-      delivery_date:      today.toISOString().slice(0, 10),
-      quantity_delivered: rule.quantity,
+      store_id:      rule.store_id,
+      delivery_date: today.toISOString().slice(0, 10),
+      items: [{
+        product_id: null,
+        quantity_delivered: rule.quantity,
+        quantity_recovered: 0,
+        unit_price_ht: null,
+        vat_rate: null,
+      }],
     });
   }
 

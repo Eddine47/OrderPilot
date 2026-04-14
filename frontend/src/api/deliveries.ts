@@ -1,16 +1,20 @@
 import api from './client';
 import type { Delivery, DeliveryStatus, MonthlyTotal, UpcomingDay } from '../types';
 
+export interface DeliveryItemPayload {
+  product_id: number | null;
+  quantity_delivered: number;
+  quantity_recovered: number;
+  unit_price_ht: number | null;
+  vat_rate: number | null;
+}
+
 export interface DeliveryPayload {
   store_id: number;
   delivery_date: string;
-  quantity_delivered: number;
-  quantity_recovered?: number;
   order_reference?: string;
   notes?: string;
-  product_id?: number | null;
-  unit_price_ht?: number | null;
-  vat_rate?: number | null;
+  items: DeliveryItemPayload[];
 }
 
 export interface DeliveryFilters {
