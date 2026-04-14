@@ -130,9 +130,7 @@ export default function DeliveryForm({ stores, initial, onSubmit, onCancel, load
         >
           <option value="">— Aucun —</option>
           {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} ({Number(p.unit_price_ht).toFixed(2)} € HT · TVA {Number(p.vat_rate).toFixed(0)}%)
-            </option>
+            <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
       </div>
@@ -161,34 +159,6 @@ export default function DeliveryForm({ stores, initial, onSubmit, onCancel, load
             />
           </div>
         )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Prix unitaire HT (€)</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={unitPrice}
-            onChange={(e) => setUnitPrice(e.target.value)}
-            placeholder="0.00"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">TVA (%)</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            max="100"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={vatRate}
-            onChange={(e) => setVatRate(e.target.value)}
-            placeholder="20"
-          />
-        </div>
       </div>
 
       <div className="bg-blue-50 rounded-lg p-3 text-sm space-y-1">

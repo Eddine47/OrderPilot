@@ -2,12 +2,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
-  { to: '/',           label: 'Tableau de bord' },
-  { to: '/livraisons', label: 'Livraisons'      },
-  { to: '/enseignes',  label: 'Enseignes'       },
-  { to: '/produits',   label: 'Mes produits'    },
-  { to: '/ventes',     label: 'Particulier'     },
-  { to: '/profil',     label: 'Mon profil'      },
+  { to: '/',           label: 'Tableau de bord', short: 'Accueil'     },
+  { to: '/livraisons', label: 'Livraisons',      short: 'Livraisons'  },
+  { to: '/enseignes',  label: 'Enseignes',       short: 'Enseignes'   },
+  { to: '/produits',   label: 'Mes produits',    short: 'Produits'    },
+  { to: '/ventes',     label: 'Particulier',     short: 'Particulier' },
+  { to: '/profil',     label: 'Mon profil',      short: 'Profil'      },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -64,19 +64,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Nav mobile (bas de l'écran) */}
-      <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 print:hidden sm:hidden z-20">
-        <ul className="flex">
+      <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 print:hidden sm:hidden z-20 pb-[env(safe-area-inset-bottom)]">
+        <ul className="grid grid-cols-6">
           {navItems.map((item) => {
             const active = location.pathname === item.to;
             return (
-              <li key={item.to} className="flex-1">
+              <li key={item.to}>
                 <Link
                   to={item.to}
-                  className={`flex flex-col items-center py-2.5 text-xs font-medium transition ${
-                    active ? 'text-blue-700' : 'text-gray-500'
+                  className={`flex items-center justify-center text-center py-2.5 px-0.5 text-[10px] leading-tight font-medium transition truncate ${
+                    active ? 'text-blue-700 bg-blue-50' : 'text-gray-500'
                   }`}
                 >
-                  {item.label}
+                  {item.short}
                 </Link>
               </li>
             );

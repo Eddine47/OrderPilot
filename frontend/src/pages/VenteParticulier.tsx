@@ -111,8 +111,8 @@ export default function VenteParticulier() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-gray-700 mb-4">Nouvelle vente</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex flex-wrap gap-3">
-            <div className="w-40">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
               <input
                 type="date"
@@ -123,7 +123,7 @@ export default function VenteParticulier() {
                 required
               />
             </div>
-            <div className="w-24">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Quantité *</label>
               <input
                 type="number"
