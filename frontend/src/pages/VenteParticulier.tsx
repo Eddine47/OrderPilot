@@ -29,6 +29,7 @@ export default function VenteParticulier() {
 
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year,  setYear]  = useState(now.getFullYear());
+  const [paymentFilter, setPaymentFilter] = useState<'' | PaymentMethod>('');
 
   // Formulaire nouvelle vente
   const [qty,     setQty]     = useState(0);
@@ -37,9 +38,10 @@ export default function VenteParticulier() {
   const [date,    setDate]    = useState(now.toISOString().slice(0, 10));
   const [error,   setError]   = useState('');
 
-  // Vente à imprimer
+  // Vente à imprimer (ticket individuel)
   const [saleToPrint, setSaleToPrint] = useState<PrivateSale | null>(null);
-  const printRef = useRef<HTMLDivElement>(null);
+  const printRef        = useRef<HTMLDivElement>(null);
+  const printMonthlyRef = useRef<HTMLDivElement>(null);
 
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ['sales', month, year],
@@ -68,6 +70,13 @@ export default function VenteParticulier() {
     pageStyle: `@page { margin: 15mm; } body { margin: 0; }`,
   });
 
+  const handlePrintMonthly = useReactToPrint({
+    content:      () => printMonthlyRef.current,
+    documentTitle: `Ventes-${year}-${String(month).padStart(2, '0')}`,
+    copyStyles:   false,
+    pageStyle: `@page { margin: 15mm; } body { margin: 0; }`,
+  });
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -87,12 +96,14 @@ export default function VenteParticulier() {
   const totalCard = cardSales.reduce((s, v) => s + v.quantity, 0);
   const totalCash = cashSales.reduce((s, v) => s + v.quantity, 0);
 
+  const filteredSales = paymentFilter ? sales.filter((s) => s.payment_method === paymentFilter) : sales;
+
   return (
     <div className="space-y-6">
 
       {/* En-tête */}
       <div>
-        <h1 className="text-xl font-bold text-gray-800">Ventes particuliers</h1>
+        <h1 className="text-xl font-bold text-gray-800">Particulier</h1>
         <p className="text-gray-500 text-sm">Enregistrez et imprimez vos ventes directes</p>
       </div>
 
@@ -100,8 +111,8 @@ export default function VenteParticulier() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-gray-700 mb-4">Nouvelle vente</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+          <div className="flex flex-wrap gap-3">
+            <div className="w-40">
               <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
               <input
                 type="date"
@@ -112,7 +123,7 @@ export default function VenteParticulier() {
                 required
               />
             </div>
-            <div>
+            <div className="w-24">
               <label className="block text-sm font-medium text-gray-700 mb-1">Quantité *</label>
               <input
                 type="number"
@@ -198,6 +209,24 @@ export default function VenteParticulier() {
             >
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
+            <select
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={paymentFilter}
+              onChange={(e) => setPaymentFilter(e.target.value as '' | PaymentMethod)}
+            >
+              <option value="">Tous paiements</option>
+              <option value="card">Carte bancaire</option>
+              <option value="cash">Espèces</option>
+            </select>
+            {sales.length > 0 && (
+              <button
+                onClick={handlePrintMonthly}
+                className="text-sm bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-200 transition"
+                title="Imprimer le récapitulatif du mois (CB + espèces)"
+              >
+                Imprimer le mois
+              </button>
+            )}
           </div>
         </div>
 
@@ -213,9 +242,9 @@ export default function VenteParticulier() {
         <div className="divide-y divide-gray-100">
           {isLoading ? (
             <div className="text-center py-8 text-gray-400">Chargement…</div>
-          ) : sales.length === 0 ? (
+          ) : filteredSales.length === 0 ? (
             <div className="text-center py-8 text-gray-400">Aucune vente ce mois</div>
-          ) : sales.map((s) => (
+          ) : filteredSales.map((s) => (
             <div key={s.id} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -258,7 +287,133 @@ export default function VenteParticulier() {
           )}
         </div>
       </div>
+
+      {/* Zone d'impression récap mensuel (hors écran) */}
+      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        <div ref={printMonthlyRef}>
+          <MonthlyReport
+            cardSales={cardSales}
+            cashSales={cashSales}
+            month={month}
+            year={year}
+            user={user}
+          />
+        </div>
+      </div>
     </div>
+  );
+}
+
+// ── Récapitulatif mensuel (CB + espèces sur 2 pages) ──────────────────────────
+function MonthlyReport({
+  cardSales,
+  cashSales,
+  month,
+  year,
+  user,
+}: {
+  cardSales: PrivateSale[];
+  cashSales: PrivateSale[];
+  month: number;
+  year: number;
+  user: { company_name?: string; company_address?: string; company_siret?: string } | null;
+}) {
+  const GREEN = '#1a6b3c';
+  const periodLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+
+  const renderPage = (
+    sales: PrivateSale[],
+    title: string,
+    color: string,
+    background: string,
+    isLast: boolean,
+  ) => {
+    const total = sales.reduce((s, v) => s + v.quantity, 0);
+    return (
+      <div style={{
+        pageBreakAfter: isLast ? 'avoid' : 'always',
+        breakAfter:     isLast ? 'avoid' : 'page',
+        padding: '18mm 14mm',
+        background: '#fff',
+        color: '#000',
+        boxSizing: 'border-box',
+        width: '100%',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: 11,
+      }}>
+        {/* En-tête */}
+        <div style={{ textAlign: 'center', marginBottom: 14 }}>
+          <div style={{ background: color, color: '#fff', fontWeight: 'bold', fontSize: 13, padding: '6px 18px', display: 'inline-block', letterSpacing: 0.8 }}>
+            {title.toUpperCase()} — {periodLabel.toUpperCase()}
+          </div>
+        </div>
+
+        {/* Vendeur */}
+        <div style={{ border: '1px solid #ccc', padding: '8px 12px', marginBottom: 12, borderRadius: 4 }}>
+          <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>VENDEUR</div>
+          <div style={{ fontWeight: 'bold', fontSize: 13 }}>{user?.company_name ?? ''}</div>
+          {user?.company_address && <div style={{ fontSize: 10, marginTop: 2, whiteSpace: 'pre-line' }}>{user.company_address}</div>}
+          {user?.company_siret   && <div style={{ fontSize: 10, marginTop: 2 }}>Siret : {user.company_siret}</div>}
+        </div>
+
+        {/* Tableau */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
+          <thead>
+            <tr style={{ background }}>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 48 }}>N°</th>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 90 }}>Date</th>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'left', fontSize: 10 }}>Description</th>
+              <th style={{ border: '1px solid #bbb', padding: '6px 8px', textAlign: 'center', fontSize: 10, width: 70 }}>Quantité</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sales.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ border: '1px solid #bbb', padding: '14px 8px', textAlign: 'center', fontStyle: 'italic', color: '#888' }}>
+                  Aucune vente
+                </td>
+              </tr>
+            ) : sales.map((s, idx) => (
+              <tr key={s.id}>
+                <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontWeight: 'bold', color }}>{idx + 1}</td>
+                <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center' }}>
+                  {format(new Date(String(s.sale_date).slice(0, 10) + 'T12:00:00'), 'dd/MM/yyyy', { locale: fr })}
+                </td>
+                <td style={{ border: '1px solid #bbb', padding: '5px 8px' }}>
+                  Vente directe — {title.toLowerCase()}
+                  {s.notes && <div style={{ fontSize: 9, color: '#666', marginTop: 1 }}>{s.notes}</div>}
+                </td>
+                <td style={{ border: '1px solid #bbb', padding: '5px 8px', textAlign: 'center', fontWeight: 'bold', color: GREEN }}>
+                  {s.quantity}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: '#f5f5f5' }}>
+              <td colSpan={3} style={{ border: '1px solid #bbb', padding: '7px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 11 }}>
+                TOTAL {title.toUpperCase()}
+              </td>
+              <td style={{ border: '1px solid #bbb', padding: '7px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 14, color }}>
+                {total}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        {/* Pied */}
+        <div style={{ marginTop: 14, fontSize: 10, color: '#555' }}>
+          {sales.length} opération{sales.length > 1 ? 's' : ''} · Période {periodLabel}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {renderPage(cardSales, 'Ventes Carte Bancaire', '#1d4ed8', '#dbeafe', false)}
+      {renderPage(cashSales, 'Ventes Espèces',         '#065f46', '#d1fae5', true)}
+    </>
   );
 }
 

@@ -39,6 +39,23 @@ export interface Delivery {
   status: DeliveryStatus;
   order_reference?: string;
   notes?: string;
+  product_id?: number | null;
+  product_name?: string | null;
+  product_unit?: string | null;
+  unit_price_ht?: string | number | null;
+  vat_rate?: string | number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Product {
+  id: number;
+  user_id: number;
+  name: string;
+  unit: string;
+  unit_price_ht: string | number;
+  vat_rate: string | number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -106,6 +123,8 @@ export interface MonthlySlip {
   slip_number: number;
   deliveries: Delivery[];
   grand_total: number;
+  grand_total_ht?: number;
+  grand_total_ttc?: number;
 }
 
 export const DAY_NAMES = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];

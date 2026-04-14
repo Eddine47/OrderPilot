@@ -36,6 +36,21 @@ CREATE TABLE stores (
 );
 
 -- ============================================================
+-- PRODUCTS  (Catalogue)
+-- ============================================================
+CREATE TABLE products (
+  id             SERIAL PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name           VARCHAR(255) NOT NULL,
+  unit           VARCHAR(50)  NOT NULL DEFAULT 'unité',
+  unit_price_ht  NUMERIC(10,2) NOT NULL DEFAULT 0,
+  vat_rate       NUMERIC(5,2)  NOT NULL DEFAULT 20.00,
+  is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
+  created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
 -- DELIVERIES  (Livraisons)
 -- ============================================================
 CREATE TABLE deliveries (
@@ -50,6 +65,9 @@ CREATE TABLE deliveries (
   status             VARCHAR(20) NOT NULL DEFAULT 'pending'
                        CHECK (status IN ('pending', 'ok')),
   order_reference    VARCHAR(100),
+  product_id         INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  unit_price_ht      NUMERIC(10,2),
+  vat_rate           NUMERIC(5,2),
   notes              TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -105,6 +123,8 @@ CREATE INDEX idx_rec_store           ON recurring_deliveries(store_id);
 CREATE INDEX idx_sales_user          ON private_sales(user_id);
 CREATE INDEX idx_sales_date          ON private_sales(user_id, sale_date);
 
+CREATE INDEX idx_products_user       ON products(user_id);
+
 -- ============================================================
 -- UPDATED_AT AUTO-TRIGGER
 -- ============================================================
@@ -134,6 +154,10 @@ CREATE TRIGGER trg_recurring_upd
 
 CREATE TRIGGER trg_sales_upd
   BEFORE UPDATE ON private_sales
+  FOR EACH ROW EXECUTE FUNCTION _set_updated_at();
+
+CREATE TRIGGER trg_products_upd
+  BEFORE UPDATE ON products
   FOR EACH ROW EXECUTE FUNCTION _set_updated_at();
 
 -- ============================================================

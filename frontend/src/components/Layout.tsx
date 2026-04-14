@@ -2,11 +2,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
-  { to: '/',           label: 'Tableau de bord'    },
-  { to: '/livraisons', label: 'Livraisons'         },
-  { to: '/enseignes',  label: 'Enseignes'          },
-  { to: '/ventes',     label: 'Ventes particuliers' },
-  { to: '/profil',     label: 'Mon profil'          },
+  { to: '/',           label: 'Tableau de bord' },
+  { to: '/livraisons', label: 'Livraisons'      },
+  { to: '/enseignes',  label: 'Enseignes'       },
+  { to: '/produits',   label: 'Mes produits'    },
+  { to: '/ventes',     label: 'Particulier'     },
+  { to: '/profil',     label: 'Mon profil'      },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

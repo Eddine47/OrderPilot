@@ -20,7 +20,9 @@ export default function Dashboard() {
   const [editDel,      setEditDel]      = useState<Delivery | null>(null);
   const [creating,     setCreating]     = useState(false);
   const [dismissed,    setDismissed]    = useState<number[]>([]);
-  // Quel jour de la preview 7j est sélectionné pour l'impression
+  // Jour sélectionné dans le navigateur (0 = aujourd'hui, 1..7 = J+1..J+7)
+  const [dayOffset,    setDayOffset]    = useState(0);
+  // Quel jour est sélectionné pour l'impression (bons futurs)
   const [printDay,     setPrintDay]     = useState<string | null>(null);
 
   const printTodayRef   = useRef<HTMLDivElement>(null);
@@ -48,7 +50,7 @@ export default function Dashboard() {
 
   const { data: upcomingDays = [] } = useQuery({
     queryKey: ['deliveries', 'upcoming'],
-    queryFn:  () => deliveriesApi.upcoming(7).then((r) => r.data),
+    queryFn:  () => deliveriesApi.upcoming(8).then((r) => r.data),
   });
 
   // Règles récurrentes qui correspondent à aujourd'hui et sans livraison existante
@@ -136,6 +138,19 @@ export default function Dashboard() {
 
   const canPrint = todayDeliveries.length > 0;
 
+  // Jour sélectionné via le navigateur
+  const selectedDay: UpcomingDay | undefined = upcomingDays[dayOffset];
+  const isTodaySelected = dayOffset === 0;
+  const selectedDeliveries = isTodaySelected ? todayDeliveries : (selectedDay?.deliveries ?? []);
+  const selectedPlanned    = selectedDay?.planned ?? [];
+  const selectedDayTotal   = selectedDeliveries.reduce((s, d) => s + d.total_quantity, 0);
+  const selectedDateStr    = selectedDay?.date ?? today.toISOString().slice(0, 10);
+  const selectedLabel      = format(new Date(selectedDateStr + 'T12:00:00'), 'EEEE d MMMM', { locale: fr })
+    .replace(/^\w/, (c) => c.toUpperCase());
+
+  // Index du prochain jour (J+N, N>0) qui a au moins une livraison ou planification
+  const nextDayIdx = upcomingDays.findIndex((d, i) => i > 0 && (d.deliveries.length + d.planned.length) > 0);
+
   // Deliveries à imprimer pour le jour sélectionné dans la preview
   const upcomingDayToPrint = upcomingDays.find((d) => d.date === printDay);
 
@@ -208,100 +223,138 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Liste du jour */}
+      {/* Carte livraisons du jour sélectionné (avec navigateur J → J+7) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-800">Livraisons aujourd'hui</h2>
-          <span className="text-sm text-gray-500">
-            {done.length} / {todayDeliveries.length} validées
-            {dayTotal > 0 && (
-              <span className="ml-2 font-semibold text-blue-700">· Total : {dayTotal}</span>
-            )}
-          </span>
+        <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+          <div>
+            <h2 className="font-semibold text-gray-800">
+              {isTodaySelected ? "Livraisons aujourd'hui" : `Livraisons du ${selectedLabel}`}
+            </h2>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {isTodaySelected ? (
+                <>
+                  {done.length} / {todayDeliveries.length} validées
+                  {dayTotal > 0 && <span className="ml-2 font-semibold text-blue-700">· Total : {dayTotal}</span>}
+                </>
+              ) : (
+                <>
+                  {selectedDeliveries.length} livraison{selectedDeliveries.length > 1 ? 's' : ''}
+                  {selectedPlanned.length > 0 && ` · ${selectedPlanned.length} prévue${selectedPlanned.length > 1 ? 's' : ''}`}
+                  {selectedDayTotal > 0 && <span className="ml-2 font-semibold text-blue-700">· Total : {selectedDayTotal}</span>}
+                </>
+              )}
+            </div>
+          </div>
+          {nextDayIdx > 0 && (
+            <button
+              onClick={() => setDayOffset(nextDayIdx)}
+              className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition"
+              title="Aller à la prochaine livraison prévue"
+            >
+              Livraison suivante →
+            </button>
+          )}
         </div>
 
-        {isLoading ? (
-          <div className="text-center py-8 text-gray-400">Chargement…</div>
-        ) : todayDeliveries.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">Aucune livraison aujourd'hui</div>
-        ) : (
-          <div className="space-y-2">
-            {pending.map((d) => (
-              <DeliveryRow key={d.id} delivery={d} onToggle={toggleStatus} onEdit={setEditDel}
-                onDelete={(id) => window.confirm('Supprimer cette livraison ?') && deleteMutation.mutate(id)} />
-            ))}
-            {done.length > 0 && pending.length > 0 && (
-              <div className="border-t border-dashed border-gray-200 my-2 pt-2">
-                <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Validées</p>
-              </div>
-            )}
-            {done.map((d) => (
-              <DeliveryRow key={d.id} delivery={d} onToggle={toggleStatus} onEdit={setEditDel}
-                onDelete={(id) => window.confirm('Supprimer cette livraison ?') && deleteMutation.mutate(id)} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── Prévisualisation 7 prochains jours ─────────────────────────────── */}
-      {upcomingDays.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <h2 className="font-semibold text-gray-800 mb-3">Prévisions — 7 prochains jours</h2>
-          <div className="space-y-2">
-            {upcomingDays.map((day) => {
-              const isToday = day.date === today.toISOString().slice(0, 10);
-              const dateObj = new Date(day.date + 'T12:00:00');
-              const label   = format(dateObj, 'EEEE d MMMM', { locale: fr })
-                .replace(/^\w/, (c) => c.toUpperCase());
-              const totalItems = day.deliveries.length + day.planned.length;
-              if (totalItems === 0 && !isToday) return null;
+        {/* Navigateur J → J+7 */}
+        {upcomingDays.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 -mx-1 px-1">
+            <button
+              onClick={() => setDayOffset(0)}
+              className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                dayOffset === 0 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Aujourd'hui
+            </button>
+            {upcomingDays.slice(1, 8).map((day, i) => {
+              const idx = i + 1;
+              const d = new Date(day.date + 'T12:00:00');
+              const count = day.deliveries.length + day.planned.length;
+              const active = dayOffset === idx;
               return (
-                <div key={day.date} className={`rounded-lg border px-3 py-2 ${isToday ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`text-sm font-semibold ${isToday ? 'text-blue-800' : 'text-gray-700'}`}>
-                      {label}
-                      {isToday && <span className="ml-2 text-xs bg-blue-600 text-white rounded px-1.5 py-0.5">Aujourd'hui</span>}
-                    </span>
-                    {day.deliveries.length > 0 && (
-                      <button
-                        onClick={() => { setPrintDay(day.date); setTimeout(handlePrintUpcoming, 100); }}
-                        className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded hover:bg-gray-300 transition"
-                      >
-                        Imprimer bons
-                      </button>
-                    )}
-                  </div>
-                  {totalItems === 0 ? (
-                    <p className="text-xs text-gray-400">Aucune livraison prévue</p>
-                  ) : (
-                    <div className="space-y-1">
-                      {day.deliveries.map((d) => (
-                        <div key={d.id} className="flex items-center gap-2 text-xs">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${d.status === 'ok' ? 'bg-green-500' : 'bg-blue-400'}`} />
-                          <span className="font-medium text-gray-800">{d.store_name}</span>
-                          <span className="text-gray-500">— {d.quantity_delivered} paquets</span>
-                          {d.quantity_recovered > 0 && (
-                            <span className="text-orange-600">retourné : {d.quantity_recovered}</span>
-                          )}
-                          <span className="text-blue-700 font-semibold ml-auto">= {d.total_quantity}</span>
-                        </div>
-                      ))}
-                      {day.planned.map((r) => (
-                        <div key={r.id} className="flex items-center gap-2 text-xs">
-                          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-purple-400" />
-                          <span className="font-medium text-gray-700">{r.store_name}</span>
-                          <span className="text-purple-600">— {r.quantity} paquets (prévu)</span>
-                          <span className="text-xs bg-purple-100 text-purple-600 rounded px-1 ml-1">R</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  key={day.date}
+                  onClick={() => setDayOffset(idx)}
+                  className={`flex-shrink-0 flex flex-col items-center text-xs px-2.5 py-1 rounded-lg transition ${
+                    active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  title={format(d, 'EEEE d MMMM', { locale: fr })}
+                >
+                  <span className="font-semibold">J+{idx}</span>
+                  <span className={`text-[10px] ${active ? 'text-blue-100' : 'text-gray-500'}`}>
+                    {format(d, 'dd/MM', { locale: fr })}
+                    {count > 0 && <span className={`ml-1 font-semibold ${active ? 'text-white' : 'text-blue-700'}`}>· {count}</span>}
+                  </span>
+                </button>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Contenu : aujourd'hui (interactif) vs jour futur (lecture + impression) */}
+        {isTodaySelected ? (
+          isLoading ? (
+            <div className="text-center py-8 text-gray-400">Chargement…</div>
+          ) : todayDeliveries.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">Aucune livraison aujourd'hui</div>
+          ) : (
+            <div className="space-y-2">
+              {pending.map((d) => (
+                <DeliveryRow key={d.id} delivery={d} onToggle={toggleStatus} onEdit={setEditDel}
+                  onDelete={(id) => window.confirm('Supprimer cette livraison ?') && deleteMutation.mutate(id)} />
+              ))}
+              {done.length > 0 && pending.length > 0 && (
+                <div className="border-t border-dashed border-gray-200 my-2 pt-2">
+                  <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Validées</p>
+                </div>
+              )}
+              {done.map((d) => (
+                <DeliveryRow key={d.id} delivery={d} onToggle={toggleStatus} onEdit={setEditDel}
+                  onDelete={(id) => window.confirm('Supprimer cette livraison ?') && deleteMutation.mutate(id)} />
+              ))}
+            </div>
+          )
+        ) : (
+          <div className="space-y-2">
+            {selectedDeliveries.length === 0 && selectedPlanned.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">Aucune livraison prévue ce jour</div>
+            ) : (
+              <>
+                {selectedDeliveries.map((d) => (
+                  <div key={d.id} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${d.status === 'ok' ? 'bg-green-500' : 'bg-blue-400'}`} />
+                    <span className="font-medium text-gray-800">{d.store_name}</span>
+                    <span className="text-xs text-gray-500">— {d.quantity_delivered} paquets</span>
+                    {d.quantity_recovered > 0 && (
+                      <span className="text-xs text-orange-600">retourné : {d.quantity_recovered}</span>
+                    )}
+                    <span className="text-blue-700 font-semibold ml-auto text-sm">= {d.total_quantity}</span>
+                  </div>
+                ))}
+                {selectedPlanned.map((r) => (
+                  <div key={r.id} className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-purple-50 border border-purple-200">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0 bg-purple-400" />
+                    <span className="font-medium text-gray-700">{r.store_name}</span>
+                    <span className="text-xs text-purple-600">— {r.quantity} paquets prévus</span>
+                    <span className="text-xs bg-purple-100 text-purple-600 rounded px-1 ml-auto font-medium">R</span>
+                  </div>
+                ))}
+                {selectedDeliveries.length > 0 && (
+                  <div className="flex justify-end pt-2">
+                    <button
+                      onClick={() => { setPrintDay(selectedDateStr); setTimeout(handlePrintUpcoming, 100); }}
+                      className="text-xs bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-200 transition"
+                    >
+                      Imprimer bons — {selectedLabel}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Zone d'impression bon du jour ──────────────────────────────────── */}
       <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>

@@ -10,6 +10,7 @@ const storeRoutes       = require('./routes/stores');
 const deliveryRoutes    = require('./routes/deliveries');
 const recurringRoutes   = require('./routes/recurring');
 const salesRoutes       = require('./routes/sales');
+const productRoutes     = require('./routes/products');
 
 const app = express();
 
@@ -49,6 +50,7 @@ app.use('/api/stores',     storeRoutes);
 app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/recurring',  recurringRoutes);
 app.use('/api/sales',      salesRoutes);
+app.use('/api/products',   productRoutes);
 
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route introuvable' }));

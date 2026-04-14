@@ -8,6 +8,7 @@ import StoreList       from './pages/StoreList';
 import StoreDetail     from './pages/StoreDetail';
 import DeliveryList    from './pages/DeliveryList';
 import VenteParticulier from './pages/VenteParticulier';
+import Products          from './pages/Products';
 import Profile           from './pages/Profile';
 
 export default function App() {
@@ -59,6 +60,17 @@ export default function App() {
           <PrivateRoute>
             <Layout>
               <StoreDetail />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/produits"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <Products />
             </Layout>
           </PrivateRoute>
         }

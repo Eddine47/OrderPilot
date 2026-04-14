@@ -38,9 +38,12 @@ async function listDeliveries(req, res, next) {
     const { rows } = await db.query(
       `SELECT d.*,
               (d.quantity_delivered - d.quantity_recovered) AS total_quantity,
-              s.name AS store_name
+              s.name AS store_name,
+              p.name AS product_name,
+              p.unit AS product_unit
        FROM deliveries d
        JOIN stores s ON s.id = d.store_id
+       LEFT JOIN products p ON p.id = d.product_id
        ${where}
        ORDER BY d.delivery_date DESC, d.delivery_number DESC`,
       params
@@ -56,9 +59,12 @@ async function getDelivery(req, res, next) {
     const { rows: [d] } = await db.query(
       `SELECT d.*,
               (d.quantity_delivered - d.quantity_recovered) AS total_quantity,
-              s.name AS store_name
+              s.name AS store_name,
+              p.name AS product_name,
+              p.unit AS product_unit
        FROM deliveries d
        JOIN stores s ON s.id = d.store_id
+       LEFT JOIN products p ON p.id = d.product_id
        WHERE d.id = $1 AND d.user_id = $2`,
       [req.params.id, req.userId]
     );
@@ -75,10 +81,24 @@ async function createDelivery(req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { store_id, delivery_date, quantity_delivered, quantity_recovered = 0, order_reference, notes } = req.body;
+    const { store_id, delivery_date, quantity_delivered, quantity_recovered = 0, order_reference, notes,
+            product_id, unit_price_ht, vat_rate } = req.body;
 
     if (!(await assertStoreOwner(store_id, req.userId))) {
       return res.status(404).json({ error: 'Enseigne introuvable' });
+    }
+
+    // Snapshot prix/TVA depuis le produit si non fourni explicitement
+    let snapPrice = unit_price_ht;
+    let snapVat   = vat_rate;
+    if (product_id && (snapPrice == null || snapVat == null)) {
+      const { rows: [p] } = await client.query(
+        'SELECT unit_price_ht, vat_rate FROM products WHERE id = $1 AND user_id = $2 AND is_active = TRUE',
+        [product_id, req.userId]
+      );
+      if (!p) return res.status(404).json({ error: 'Produit introuvable' });
+      if (snapPrice == null) snapPrice = p.unit_price_ht;
+      if (snapVat   == null) snapVat   = p.vat_rate;
     }
 
     await client.query('BEGIN');
@@ -87,11 +107,13 @@ async function createDelivery(req, res, next) {
     const { rows: [d] } = await client.query(
       `INSERT INTO deliveries
          (user_id, store_id, delivery_date, delivery_number,
-          quantity_delivered, quantity_recovered, order_reference, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          quantity_delivered, quantity_recovered, order_reference, notes,
+          product_id, unit_price_ht, vat_rate)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [req.userId, store_id, delivery_date, deliveryNumber,
-       quantity_delivered, quantity_recovered, order_reference || null, notes || null]
+       quantity_delivered, quantity_recovered, order_reference || null, notes || null,
+       product_id || null, snapPrice ?? null, snapVat ?? null]
     );
     await client.query('COMMIT');
 
@@ -109,7 +131,8 @@ async function updateDelivery(req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { delivery_date, quantity_delivered, quantity_recovered, status, order_reference, notes } = req.body;
+    const { delivery_date, quantity_delivered, quantity_recovered, status, order_reference, notes,
+            product_id, unit_price_ht, vat_rate } = req.body;
 
     const { rows: [d] } = await db.query(
       `UPDATE deliveries
@@ -118,10 +141,14 @@ async function updateDelivery(req, res, next) {
            quantity_recovered = COALESCE($3, quantity_recovered),
            status             = COALESCE($4, status),
            order_reference    = COALESCE($5, order_reference),
-           notes              = COALESCE($6, notes)
-       WHERE id = $7 AND user_id = $8
+           notes              = COALESCE($6, notes),
+           product_id         = COALESCE($7, product_id),
+           unit_price_ht      = COALESCE($8, unit_price_ht),
+           vat_rate           = COALESCE($9, vat_rate)
+       WHERE id = $10 AND user_id = $11
        RETURNING *`,
       [delivery_date, quantity_delivered, quantity_recovered, status, order_reference, notes,
+       product_id, unit_price_ht, vat_rate,
        req.params.id, req.userId]
     );
     if (!d) return res.status(404).json({ error: 'Livraison introuvable' });
@@ -168,9 +195,12 @@ async function todayDeliveries(req, res, next) {
     const { rows } = await db.query(
       `SELECT d.*,
               (d.quantity_delivered - d.quantity_recovered) AS total_quantity,
-              s.name AS store_name
+              s.name AS store_name,
+              p.name AS product_name,
+              p.unit AS product_unit
        FROM deliveries d
        JOIN stores s ON s.id = d.store_id
+       LEFT JOIN products p ON p.id = d.product_id
        WHERE d.user_id = $1 AND d.delivery_date = $2
        ORDER BY d.store_id, d.delivery_number`,
       [req.userId, today]
@@ -222,9 +252,12 @@ async function upcomingDeliveries(req, res, next) {
     const { rows: existing } = await db.query(
       `SELECT d.*,
               (d.quantity_delivered - d.quantity_recovered) AS total_quantity,
-              s.name AS store_name
+              s.name AS store_name,
+              p.name AS product_name,
+              p.unit AS product_unit
        FROM deliveries d
        JOIN stores s ON s.id = d.store_id
+       LEFT JOIN products p ON p.id = d.product_id
        WHERE d.user_id = $1 AND d.delivery_date BETWEEN $2 AND $3
        ORDER BY d.delivery_date, d.store_id`,
       [req.userId, from, to]

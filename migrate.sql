@@ -47,3 +47,33 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- 4. Produits (catalogue) + snapshot prix/TVA sur les livraisons
+CREATE TABLE IF NOT EXISTS products (
+  id             SERIAL PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name           VARCHAR(255) NOT NULL,
+  unit           VARCHAR(50)  NOT NULL DEFAULT 'unité',
+  unit_price_ht  NUMERIC(10,2) NOT NULL DEFAULT 0,
+  vat_rate       NUMERIC(5,2)  NOT NULL DEFAULT 20.00,
+  is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
+  created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_user ON products(user_id);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_products_upd') THEN
+    CREATE TRIGGER trg_products_upd
+      BEFORE UPDATE ON products
+      FOR EACH ROW EXECUTE FUNCTION _set_updated_at();
+  END IF;
+END;
+$$;
+
+-- Snapshot produit / prix / TVA sur les livraisons (optionnel)
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS product_id    INTEGER REFERENCES products(id) ON DELETE SET NULL;
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS unit_price_ht NUMERIC(10,2);
+ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS vat_rate      NUMERIC(5,2);

@@ -124,8 +124,11 @@ async function getMonthlySlip(req, res, next) {
 
     const { rows: deliveries } = await db.query(
       `SELECT d.*,
-              (d.quantity_delivered - d.quantity_recovered) AS total_quantity
+              (d.quantity_delivered - d.quantity_recovered) AS total_quantity,
+              p.name AS product_name,
+              p.unit AS product_unit
        FROM deliveries d
+       LEFT JOIN products p ON p.id = d.product_id
        WHERE d.store_id = $1
          AND EXTRACT(YEAR  FROM d.delivery_date) = $2
          AND EXTRACT(MONTH FROM d.delivery_date) = $3
@@ -134,6 +137,15 @@ async function getMonthlySlip(req, res, next) {
     );
 
     const grandTotal = deliveries.reduce((s, d) => s + Number(d.total_quantity), 0);
+    const grandTotalHt = deliveries.reduce((s, d) => {
+      const price = Number(d.unit_price_ht) || 0;
+      return s + Number(d.total_quantity) * price;
+    }, 0);
+    const grandTotalTtc = deliveries.reduce((s, d) => {
+      const price = Number(d.unit_price_ht) || 0;
+      const vat = Number(d.vat_rate) || 0;
+      return s + Number(d.total_quantity) * price * (1 + vat / 100);
+    }, 0);
 
     // User company info
     const { rows: [user] } = await db.query(
@@ -149,6 +161,8 @@ async function getMonthlySlip(req, res, next) {
       slip_number: slipRow.slip_number || 1,
       deliveries,
       grand_total: grandTotal,
+      grand_total_ht: Number(grandTotalHt.toFixed(2)),
+      grand_total_ttc: Number(grandTotalTtc.toFixed(2)),
     });
   } catch (err) {
     next(err);

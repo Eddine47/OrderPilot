@@ -21,6 +21,9 @@ router.post('/',
   body('quantity_delivered').isInt({ min: 0 }).withMessage('Quantité livrée invalide'),
   body('quantity_recovered').optional().isInt({ min: 0 }),
   body('order_reference').optional().isString().trim(),
+  body('product_id').optional({ nullable: true }).isInt({ gt: 0 }),
+  body('unit_price_ht').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('vat_rate').optional({ nullable: true }).isFloat({ min: 0, max: 100 }),
   createDelivery
 );
 
@@ -31,6 +34,9 @@ router.put('/:id',
   body('quantity_recovered').optional().isInt({ min: 0 }),
   body('status').optional().isIn(['pending', 'ok']),
   body('order_reference').optional().isString().trim(),
+  body('product_id').optional({ nullable: true }).isInt({ gt: 0 }),
+  body('unit_price_ht').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('vat_rate').optional({ nullable: true }).isFloat({ min: 0, max: 100 }),
   updateDelivery
 );
 router.patch('/:id/status',  patchStatus);

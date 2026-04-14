@@ -8,6 +8,9 @@ export interface DeliveryPayload {
   quantity_recovered?: number;
   order_reference?: string;
   notes?: string;
+  product_id?: number | null;
+  unit_price_ht?: number | null;
+  vat_rate?: number | null;
 }
 
 export interface DeliveryFilters {
