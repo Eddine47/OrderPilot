@@ -104,17 +104,6 @@ export default function DeliveryForm({ stores, initial, onSubmit, onCancel, load
   const totalDelivered = items.reduce((s, it) => s + (Number(it.quantity_delivered) || 0), 0);
   const totalRecovered = items.reduce((s, it) => s + (Number(it.quantity_recovered) || 0), 0);
   const totalQty = totalDelivered - totalRecovered;
-  const totalHt  = items.reduce((s, it) => {
-    const q = (Number(it.quantity_delivered) || 0) - (Number(it.quantity_recovered) || 0);
-    const p = Number(it.unit_price_ht) || 0;
-    return s + q * p;
-  }, 0);
-  const totalTtc = items.reduce((s, it) => {
-    const q = (Number(it.quantity_delivered) || 0) - (Number(it.quantity_recovered) || 0);
-    const p = Number(it.unit_price_ht) || 0;
-    const v = Number(it.vat_rate) || 0;
-    return s + q * p * (1 + v / 100);
-  }, 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -238,31 +227,6 @@ export default function DeliveryForm({ stores, initial, onSubmit, onCancel, load
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs text-gray-500 mb-0.5">PU HT (€)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
-                  value={it.unit_price_ht}
-                  onChange={(e) => updateItem(idx, { unit_price_ht: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-0.5">TVA (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={100}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
-                  value={it.vat_rate}
-                  onChange={(e) => updateItem(idx, { vat_rate: e.target.value })}
-                />
-              </div>
-            </div>
           </div>
         ))}
       </div>
@@ -274,12 +238,6 @@ export default function DeliveryForm({ stores, initial, onSubmit, onCancel, load
           <span className="font-bold text-blue-700 text-lg">{totalQty}</span>
           <span className="text-gray-600 ml-1">unités</span>
         </div>
-        {totalHt > 0 && (
-          <div className="flex justify-between text-xs text-gray-600">
-            <span>Total HT : <span className="font-semibold text-gray-800">{totalHt.toFixed(2)} €</span></span>
-            <span>Total TTC : <span className="font-semibold text-green-700">{totalTtc.toFixed(2)} €</span></span>
-          </div>
-        )}
       </div>
 
       <div>

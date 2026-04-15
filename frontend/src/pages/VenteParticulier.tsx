@@ -163,17 +163,6 @@ export default function VenteParticulier() {
   const filteredSales = paymentFilter ? sales.filter((s) => s.payment_method === paymentFilter) : sales;
 
   const formTotalQty = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-  const formTotalHt  = items.reduce((s, it) => {
-    const q = Number(it.quantity) || 0;
-    const p = Number(it.unit_price_ht) || 0;
-    return s + q * p;
-  }, 0);
-  const formTotalTtc = items.reduce((s, it) => {
-    const q = Number(it.quantity) || 0;
-    const p = Number(it.unit_price_ht) || 0;
-    const v = Number(it.vat_rate) || 0;
-    return s + q * p * (1 + v / 100);
-  }, 0);
 
   return (
     <div className="space-y-6">
@@ -243,31 +232,6 @@ export default function VenteParticulier() {
                     required
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">PU HT (€)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
-                      value={it.unit_price_ht}
-                      onChange={(e) => updateItem(idx, { unit_price_ht: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">TVA (%)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      max={100}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
-                      value={it.vat_rate}
-                      onChange={(e) => updateItem(idx, { vat_rate: e.target.value })}
-                    />
-                  </div>
-                </div>
               </div>
             ))}
           </div>
@@ -279,12 +243,6 @@ export default function VenteParticulier() {
               <span className="font-bold text-blue-700 text-lg">{formTotalQty}</span>
               <span className="text-gray-600 ml-1">unités</span>
             </div>
-            {formTotalHt > 0 && (
-              <div className="flex justify-between text-xs text-gray-600">
-                <span>Total HT : <span className="font-semibold text-gray-800">{formTotalHt.toFixed(2)} €</span></span>
-                <span>Total TTC : <span className="font-semibold text-green-700">{formTotalTtc.toFixed(2)} €</span></span>
-              </div>
-            )}
           </div>
 
           {/* Mode de paiement */}
