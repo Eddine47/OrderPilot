@@ -154,9 +154,6 @@ export default function Dashboard() {
   const selectedLabel      = format(new Date(selectedDateStr + 'T12:00:00'), 'EEEE d MMMM', { locale: fr })
     .replace(/^\w/, (c) => c.toUpperCase());
 
-  // Index du prochain jour (J+N, N>0) qui a au moins une livraison ou planification
-  const nextDayIdx = upcomingDays.findIndex((d, i) => i > 0 && (d.deliveries.length + d.planned.length) > 0);
-
   // Deliveries à imprimer pour le jour sélectionné dans la preview
   const upcomingDayToPrint = upcomingDays.find((d) => d.date === printDay);
 
@@ -251,15 +248,6 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-          {nextDayIdx > 0 && (
-            <button
-              onClick={() => setDayOffset(nextDayIdx)}
-              className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition"
-              title="Aller à la prochaine livraison prévue"
-            >
-              Livraison suivante →
-            </button>
-          )}
         </div>
 
         {/* Navigateur J → J+7 */}
@@ -433,11 +421,10 @@ function PrintSlips({
 
   return (
     <>
-      {deliveries.flatMap((d, idx) =>
-        [1, 2].map((copy) => {
-          const isLastPage = idx === deliveries.length - 1 && copy === 2;
+      {deliveries.map((d, idx) => {
+          const isLastPage = idx === deliveries.length - 1;
           return (
-            <div key={`${d.id}-c${copy}`} style={{
+            <div key={d.id} style={{
               pageBreakAfter: isLastPage ? 'avoid' : 'always',
               breakAfter:     isLastPage ? 'avoid' : 'page',
               padding: '16mm 14mm',
@@ -473,9 +460,6 @@ function PrintSlips({
                   <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>DESTINATAIRE</div>
                   <div style={{ border: '1px solid #bbb', padding: '6px 8px', minHeight: 56, textAlign: 'left' }}>
                     <div style={{ fontWeight: 'bold', fontSize: 15 }}>{d.store_name}</div>
-                    <div style={{ fontSize: 9, marginTop: 6, color: '#777' }}>
-                      {copy === 1 ? 'Exemplaire enseigne' : 'Exemplaire livreur'}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -559,8 +543,7 @@ function PrintSlips({
               </div>
             </div>
           );
-        })
-      )}
+        })}
     </>
   );
 }

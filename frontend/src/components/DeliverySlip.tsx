@@ -7,7 +7,7 @@ import { MONTH_NAMES } from '../types';
 interface Props { slip: MonthlySlip; }
 
 const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
-  const { store, user, month, year, slip_number, deliveries, grand_total } = slip;
+  const { store, user, month, year, deliveries, grand_total } = slip;
   const showReturns = store.has_returns ?? false;
 
   // On aplatit les livraisons en lignes (1 ligne = 1 item)
@@ -87,12 +87,9 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
         </div>
 
         <div style={{ flex: 1, textAlign: 'right', paddingLeft: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0, marginBottom: 6 }}>
-            <div style={{ background: GREEN, color: '#fff', fontWeight: 'bold', fontSize: 11, padding: '4px 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              BON DE LIVRAISON N°
-            </div>
-            <div style={{ border: `2px solid ${GREEN}`, fontSize: 18, fontWeight: 'bold', padding: '2px 14px', minWidth: 44, textAlign: 'center', color: GREEN }}>
-              {slip_number}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 6 }}>
+            <div style={{ background: GREEN, color: '#fff', fontWeight: 'bold', fontSize: 13, padding: '6px 14px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              BON LIVRAISON MENSUEL
             </div>
           </div>
           <div style={{ fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase', color: '#555', marginBottom: 3 }}>DESTINATAIRE</div>
@@ -120,8 +117,9 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
             <th style={cell({ textAlign: 'center', width: 72, fontWeight: 'bold', background: '#e8e8e8' })}>Réf. cmd</th>
             <th style={cell({ textAlign: 'center', width: 60, fontWeight: 'bold', background: '#e8e8e8' })}>Date</th>
             <th style={cell({ textAlign: 'left', fontWeight: 'bold', background: '#e8e8e8' })}>Produit</th>
+            <th style={cell({ textAlign: 'center', width: 50, fontWeight: 'bold', background: '#e8e8e8' })}>Qté livrée</th>
             {showReturns && <th style={cell({ textAlign: 'center', width: 50, fontWeight: 'bold', background: '#e8e8e8' })}>Retour</th>}
-            <th style={cell({ textAlign: 'center', width: 44, fontWeight: 'bold', background: '#e8e8e8' })}>Qté</th>
+            <th style={cell({ textAlign: 'center', width: 58, fontWeight: 'bold', background: '#e8e8e8' })}>Qté totale livrée</th>
             {showPricing && (
               <>
                 <th style={cell({ textAlign: 'center', width: 54, fontWeight: 'bold', background: '#e8e8e8' })}>PU HT</th>
@@ -135,6 +133,7 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
         <tbody>
           {rows.map((r, idx) => {
             const { retourne, qty, price, vat, totalHt, totalTtc } = itemTotals(r.item);
+            const delivered = r.item.quantity_delivered ?? 0;
             return (
               <tr key={`${r.deliveryId}-${r.itemId}`}>
                 <td style={cell({ textAlign: 'center', padding: '4px 4px', fontWeight: 'bold', color: GREEN })}>{idx + 1}</td>
@@ -147,12 +146,10 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
                 <td style={cell({ padding: '4px 6px' })}>
                   {r.item.product_name
                     ? r.item.product_name
-                    : `${r.item.quantity_delivered} paquet${r.item.quantity_delivered > 1 ? 's' : ''}`}
-                  {showReturns && retourne > 0 && (
-                    <span style={{ marginLeft: 6, color: '#c05600', fontSize: 9 }}>
-                      (dont {retourne} retourné{retourne > 1 ? 's' : ''})
-                    </span>
-                  )}
+                    : `${delivered} paquet${delivered > 1 ? 's' : ''}`}
+                </td>
+                <td style={cell({ textAlign: 'center', padding: '4px 4px' })}>
+                  {delivered}
                 </td>
                 {showReturns && (
                   <td style={cell({ textAlign: 'center', padding: '4px 4px', color: retourne > 0 ? '#c05600' : '#999' })}>
@@ -188,6 +185,7 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
               <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
               <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
               <td style={cell({ padding: '9px 6px' })}>&nbsp;</td>
+              <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
               {showReturns && <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>}
               <td style={cell({ padding: '9px 4px' })}>&nbsp;</td>
               {showPricing && (
@@ -204,7 +202,7 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
 
         <tfoot>
           <tr>
-            <td colSpan={4} style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f0f7f0', fontSize: 11, color: '#333' })}>
+            <td colSpan={showReturns ? 5 : 4} style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f0f7f0', fontSize: 11, color: '#333' })}>
               TOTAL DU MOIS
             </td>
             {showReturns && <td style={cell({ background: '#f0f7f0' })}>&nbsp;</td>}
@@ -226,6 +224,27 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
           </tr>
         </tfoot>
       </table>
+
+      {showPricing && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
+            <tbody>
+              <tr>
+                <td style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f5f5f5', padding: '4px 10px' })}>Total HT</td>
+                <td style={cell({ textAlign: 'right', padding: '4px 10px', minWidth: 90 })}>{grandTotalHt.toFixed(2)} €</td>
+              </tr>
+              <tr>
+                <td style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f5f5f5', padding: '4px 10px' })}>Total TVA</td>
+                <td style={cell({ textAlign: 'right', padding: '4px 10px', minWidth: 90 })}>{(grandTotalTtc - grandTotalHt).toFixed(2)} €</td>
+              </tr>
+              <tr>
+                <td style={cell({ textAlign: 'right', fontWeight: 'bold', background: '#f0f7f0', padding: '4px 10px', color: GREEN })}>Total TTC</td>
+                <td style={cell({ textAlign: 'right', fontWeight: 'bold', padding: '4px 10px', minWidth: 90, color: GREEN })}>{grandTotalTtc.toFixed(2)} €</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: 10, marginTop: 8 }}>
         <div>
