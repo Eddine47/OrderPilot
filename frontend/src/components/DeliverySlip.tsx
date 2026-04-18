@@ -10,10 +10,12 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
   const { store, user, month, year, deliveries, grand_total } = slip;
   const showReturns = store.has_returns ?? false;
 
-  // On aplatit les livraisons en lignes (1 ligne = 1 item)
+  // On aplatit les livraisons en lignes (1 ligne = 1 item).
+  // Pour les anciennes livraisons sans delivery_items, on fabrique une ligne
+  // synthétique depuis les colonnes de la livraison elle-même.
   type FlatRow = {
     deliveryId: number;
-    itemId: number;
+    itemId: number | string;
     number: number;
     date: string;
     orderRef?: string;
@@ -21,16 +23,39 @@ const DeliverySlip = forwardRef<HTMLDivElement, Props>(({ slip }, ref) => {
   };
   const rows: FlatRow[] = [];
   deliveries.forEach((d) => {
-    (d.items || []).forEach((it) => {
+    if (d.items && d.items.length > 0) {
+      d.items.forEach((it) => {
+        rows.push({
+          deliveryId: d.id,
+          itemId: it.id,
+          number: d.delivery_number,
+          date: d.delivery_date,
+          orderRef: d.order_reference,
+          item: it,
+        });
+      });
+    } else {
+      const legacy = d as unknown as { product_id?: number | null; unit_price_ht?: string | number | null; vat_rate?: string | number | null };
       rows.push({
         deliveryId: d.id,
-        itemId: it.id,
+        itemId: `d${d.id}`,
         number: d.delivery_number,
         date: d.delivery_date,
         orderRef: d.order_reference,
-        item: it,
+        item: {
+          id: 0,
+          delivery_id: d.id,
+          product_id: legacy.product_id ?? null,
+          product_name: null,
+          product_unit: null,
+          quantity_delivered: d.quantity_delivered,
+          quantity_recovered: d.quantity_recovered,
+          unit_price_ht: legacy.unit_price_ht ?? null,
+          vat_rate: legacy.vat_rate ?? null,
+          position: 1,
+        },
       });
-    });
+    }
   });
 
   const showPricing = rows.some((r) => Number(r.item.unit_price_ht) > 0);
